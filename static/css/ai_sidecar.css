@@ -634,273 +634,437 @@ body {
     opacity: 1;
   }
 }
-/* ===== SURGICAL CSS REFINEMENT - CONSERVATIVE UX PASS ===== */
-/* Minimal, incremental improvements only */
-/* No gradients, no icons, no special effects */
+/* ===== SURGICAL CSS REFINEMENT - UX CLARITY PASS ===== */
+/* Incremental improvements to visual hierarchy and agent confidence */
+/* Safe to layer on top of existing styles */
 
 /* ============================================
-   1. CANNED RESPONSES - Neutral Emphasis
+   1. CANNED RESPONSES - Substantial Content Blocks
    ============================================ */
 
-/* Canned response container - neutral card emphasis */
+/* Make canned response section feel more important */
 #canned-response-container {
   padding: var(--spacing-md);
-  background: var(--color-surface);
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-md);
+  background: linear-gradient(to bottom, #fefce8 0%, #ffffff 100%);
+  border: 2px solid #fde047;
+  border-radius: var(--radius-lg);
   margin-bottom: var(--spacing-md);
 }
 
-/* Canned response button - clear actionable card */
+/* Canned response button - Make it feel like a substantial content preview */
 #canned-response-btn {
   width: 100%;
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-sm);
   padding: var(--spacing-md);
-  background: var(--color-surface);
-  border: 2px solid var(--color-border);
+  background: white;
+  border: 2px solid #e5e7eb;
   border-radius: var(--radius-md);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.2s;
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 #canned-response-btn:hover {
-  border-color: var(--color-text-secondary);
+  border-color: #fbbf24;
+  background: #fffbeb;
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.15);
+  transform: translateY(-1px);
 }
 
-/* Canned response text - readable hierarchy */
+/* Icon in canned response - indicates insertion action */
+#canned-response-btn .icon {
+  color: #f59e0b;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Canned response text - clear hierarchy */
 #canned-response-text {
   flex: 1;
   font-size: var(--font-size-base);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
   color: var(--color-text);
   line-height: 1.5;
 }
 
+/* Visual indicator that this replaces draft content */
+#canned-response-btn::after {
+  content: "Insert";
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+  color: #f59e0b;
+  background: #fef3c7;
+  padding: 3px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+#canned-response-btn {
+  position: relative; /* Enable ::after positioning */
+}
+
 /* ============================================
-   2. QUICK REPLIES - Lighter Pills
+   2. QUICK REPLIES - Lighter, Append-Style Actions
    ============================================ */
 
-/* Quick reply buttons - lighter pill style */
+/* Quick replies section header - slightly less prominent than canned */
+.quick-replies-placeholder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Quick reply buttons - lighter visual weight, append indication */
 .quick-reply-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 16px; /* Pill shape */
+  padding: 8px 12px;
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
   font-size: 13px;
   font-weight: var(--weight-medium);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: all 0.15s;
+  position: relative;
+}
+
+/* Subtle visual cue that these append, not replace */
+.quick-reply-btn::before {
+  content: "+";
+  font-size: 14px;
+  font-weight: var(--weight-bold);
+  color: #9ca3af;
+  margin-right: -2px;
 }
 
 .quick-reply-btn:hover:not(:disabled) {
-  background: var(--color-surface);
-  border-color: var(--color-text-muted);
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  color: var(--color-text);
+  transform: none; /* Lighter interaction than canned responses */
 }
 
 .quick-reply-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+  background: #fafafa;
 }
 
-/* Helper text below quick replies */
+/* Help text clarifies behavior */
 .quick-replies-placeholder + .help-text {
-  margin-top: var(--spacing-xs);
+  color: var(--color-text-muted);
   font-size: 11px;
+  margin-top: 4px;
+  font-style: italic;
 }
 
 /* ============================================
-   3. SUGGESTED ACTIONS - Read-Only List
+   3. SUGGESTED ACTIONS - Read-Only Guidance
    ============================================ */
 
-/* Remove interactive states - these are guidance only */
+/* Remove hover states - these are advisory, not clickable */
 .actions-list li {
-  cursor: default;
-  transition: none;
+  cursor: default; /* Not a button */
+  border: 2px solid #e5e7eb;
+  background: #fafafa;
+  transition: none; /* No interaction feedback */
 }
 
 .actions-list li:hover {
-  border-color: var(--color-border);
-  background: var(--color-surface);
-  transform: none;
+  border-color: #e5e7eb; /* No color change */
+  background: #fafafa; /* No background change */
+  transform: none; /* No lift effect */
 }
 
-/* Muted text for advisory tone */
+/* Number badge - muted to feel advisory */
+.actions-list li::before {
+  background: #6b7280;
+  color: white;
+  font-size: 13px;
+  font-weight: var(--weight-semibold);
+}
+
+/* Text styling - feels like guidance, not action */
 .actions-list li {
   color: var(--color-text-secondary);
   font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Optional: Add subtle "guidance" indicator */
+.actions-list::before {
+  content: "Agent Guidance — Review Before Proceeding";
+  display: block;
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 2px solid #f3f4f6;
 }
 
 /* ============================================
-   4. AUTO-SEND BADGE - Subtle Pill
+   4. DRAFT AREA - Subtle AI Content Distinction
    ============================================ */
 
-/* Keep existing badge styles but ensure consistency */
-.badge {
+/* Light visual treatment to indicate AI-generated content */
+.draft-textarea {
+  background: linear-gradient(to bottom, #f0f9ff 0%, #ffffff 100%);
+  border: 2px solid #bfdbfe;
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--color-text);
+}
+
+.draft-textarea:focus {
+  background: white;
+  border-color: var(--color-primary);
+}
+
+/* Draft type badge - positioned more prominently */
+#draft-type-badge {
   font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-weight: var(--weight-medium);
-  border: 1px solid transparent;
+  padding: 5px 10px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
 }
 
+/* ============================================
+   5. AUTO-SEND ELIGIBILITY - Visual Badge Only
+   ============================================ */
+
+/* Style the badge itself (no interactivity) */
 .badge.auto-send-eligible {
-  border-color: rgba(5, 150, 105, 0.3);
+  background: #d1fae5;
+  color: #065f46;
+  border: 2px solid #6ee7b7;
+  font-weight: var(--weight-bold);
+  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.badge.requires-review {
-  border-color: rgba(217, 119, 6, 0.3);
-}
-
-/* ============================================
-   5. HIERARCHY & SPACING IMPROVEMENTS
-   ============================================ */
-
-/* Ensure consistent spacing between major sections */
-.section-card {
-  margin-bottom: 20px;
-}
-
-/* Section titles - ensure prominence */
-.section-title {
-  font-size: 16px;
-  font-weight: var(--weight-semibold);
-  margin-bottom: var(--spacing-md);
-}
-
-/* Divider between sections (if needed) */
-.section-card + .section-card {
-  margin-top: var(--spacing-md);
-}
-
-/* Subsection labels */
-.label-xs {
-  margin-bottom: var(--spacing-xs);
-}
-
-/* ============================================
-   6. BUTTON CLARITY
-   ============================================ */
-
-/* Primary buttons - clear hierarchy */
-.btn-primary {
-  font-weight: var(--weight-semibold);
-}
-
-/* Secondary buttons - visually lighter */
-.btn-secondary {
-  font-weight: var(--weight-medium);
-}
-
-/* Icon buttons - subtle hover */
-.btn-icon:hover {
-  background: var(--color-bg);
-}
-
-/* ============================================
-   7. METRICS - Subtle Emphasis Only
-   ============================================ */
-
-/* Confidence number - clear but not oversized */
-.metric-number {
-  font-size: 20px;
+/* Visual indicator icon (if present) */
+.badge.auto-send-eligible::before {
+  content: "✓";
+  font-size: 14px;
   font-weight: var(--weight-bold);
 }
 
-/* Metric badges - subtle borders */
+.badge.requires-review {
+  background: #fed7aa;
+  color: #92400e;
+  border: 2px solid #fdba74;
+  font-weight: var(--weight-bold);
+  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge.requires-review::before {
+  content: "⚠";
+  font-size: 14px;
+}
+
+/* Badge positioning within guidance section */
+.guidance-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+}
+
+/* ============================================
+   6. GENERAL HIERARCHY REFINEMENTS
+   ============================================ */
+
+/* Strengthen visual separation between major sections */
+.section-card + .section-card {
+  margin-top: var(--spacing-lg);
+}
+
+/* Section titles - ensure they're always prominent */
+.section-title {
+  font-size: 18px;
+  font-weight: var(--weight-bold);
+  color: var(--color-text);
+  margin-bottom: var(--spacing-md);
+  line-height: 1.3;
+}
+
+/* Subsection labels (like "Primary Intent") */
+.label-xs {
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+  display: block;
+}
+
+/* Help text consistency */
+.help-text {
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: normal;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* ============================================
+   7. BUTTON CONSISTENCY & CLARITY
+   ============================================ */
+
+/* Primary actions - clearly indicate they perform an action */
+.btn-primary {
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.01em;
+  position: relative;
+}
+
+/* Secondary actions - clearly less prominent */
+.btn-secondary {
+  font-weight: var(--weight-semibold);
+  background: white;
+  color: var(--color-text-secondary);
+}
+
+/* Icon buttons - clear interactive affordance */
+.btn-icon {
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.btn-icon:hover {
+  background: #f3f4f6;
+}
+
+/* Copy button - specific affordance */
+#copy-draft-btn {
+  background: white;
+  border: 2px solid #e5e7eb;
+}
+
+#copy-draft-btn:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+/* ============================================
+   8. CONFIDENCE METRICS - Clear Visual Weight
+   ============================================ */
+
+/* Confidence percentage - hero number */
+.metric-number {
+  font-size: 28px;
+  font-weight: var(--weight-bold);
+  color: var(--color-text);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Metric badges - stronger color coding */
 .metric-badge {
-  border: 1px solid transparent;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .confidence-high {
-  border-color: rgba(5, 150, 105, 0.3);
+  background: #d1fae5;
+  color: #065f46;
+  border: 2px solid #6ee7b7;
 }
 
 .confidence-medium {
-  border-color: rgba(217, 119, 6, 0.3);
+  background: #fed7aa;
+  color: #92400e;
+  border: 2px solid #fdba74;
 }
 
 .confidence-low,
 .confidence-very_low {
-  border-color: rgba(220, 38, 38, 0.3);
+  background: #fecaca;
+  color: #991b1b;
+  border: 2px solid #f87171;
 }
 
 /* ============================================
-   8. INTENT DISPLAY - Clear Categorization
+   9. INTENT CHIPS - Clear Categorization
    ============================================ */
 
-/* Primary intent chip - clear emphasis */
+/* Primary intent - most prominent */
 .intent-chip-primary {
-  padding: 8px 14px;
-  font-size: 14px;
-  font-weight: var(--weight-semibold);
-  border: 1px solid rgba(30, 64, 175, 0.3);
+  padding: 10px 16px;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 2px solid #93c5fd;
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-weight: var(--weight-bold);
 }
 
-/* Secondary intent chips - lighter */
+/* Secondary intents - lighter weight */
 .intent-chip {
-  padding: 4px 10px;
-  font-size: 12px;
-  border: 1px solid var(--color-border);
+  padding: 6px 12px;
+  background: #f3f4f6;
+  color: var(--color-text-secondary);
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: var(--weight-medium);
 }
 
 /* ============================================
-   9. DRAFT AREA - Keep Neutral
+   10. ACCESSIBILITY & POLISH
    ============================================ */
 
-/* Draft textarea - no special treatment, keep functional */
-.draft-textarea {
-  /* No changes - keep existing styles */
-}
-
-/* ============================================
-   10. HELP TEXT CONSISTENCY
-   ============================================ */
-
-/* Consistent helper text styling */
-.help-text {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  line-height: 1.4;
-}
-
-/* ============================================
-   11. ACCESSIBILITY
-   ============================================ */
-
-/* Clear disabled states */
+/* Ensure disabled states are obvious */
 button:disabled,
-input:disabled {
+input:disabled,
+textarea:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  filter: grayscale(50%);
 }
 
-/* Focus states for keyboard navigation */
+/* Focus states - clear keyboard navigation */
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 3px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
-/* FORCE SIDECAR MODE */
-.sidecar-mount {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: 420px;
-  height: 100vh;
-  background: #f9fafb;
-  border-left: 1px solid #e5e7eb;
-  z-index: 9999;
-  overflow-y: auto;
+
+/* Loading state - if spinner present */
+.animate-spin {
+  animation: spin 0.8s linear infinite;
 }
 
-.sidecar-shell {
-  max-width: 100%;
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
