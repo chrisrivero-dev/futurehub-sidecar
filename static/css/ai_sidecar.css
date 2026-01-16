@@ -1102,3 +1102,216 @@ textarea:focus-visible {
 .toast:empty {
   display: none !important;
 }
+/* ===============================
+   CANNED RESPONSES DROPDOWN
+   =============================== */
+
+#ai-assistant-panel .canned-dropdown {
+  position: relative;
+}
+
+#ai-assistant-panel .canned-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid var(--fh-color-border);
+  border-radius: var(--fh-radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+#ai-assistant-panel .canned-item {
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+#ai-assistant-panel .canned-item:last-child {
+  border-bottom: none;
+}
+
+#ai-assistant-panel .canned-item:hover {
+  background: #f9fafb;
+}
+
+#ai-assistant-panel .canned-title {
+  font-weight: var(--fh-weight-semibold);
+  font-size: 13px;
+}
+
+#ai-assistant-panel .canned-preview {
+  font-size: 12px;
+  color: var(--fh-color-text-muted);
+  margin-top: 2px;
+}
+
+#ai-assistant-panel .canned-star {
+  color: #f59e0b;
+  font-size: 14px;
+  margin-top: 2px;
+}
+/* ===== Canned Dropdown ===== */
+
+.section-card {
+  overflow: visible; /* allow dropdowns to escape card */
+}
+
+.canned-dropdown {
+  position: relative;
+  z-index: 20;
+  margin-bottom: 8px;
+}
+
+/* Button layout */
+.canned-dropdown-trigger,
+#canned-dropdown-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Caret animation */
+.dropdown-caret {
+  width: 16px;
+  height: 16px;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+}
+
+button[aria-expanded="true"] .dropdown-caret {
+  transform: rotate(180deg);
+}
+
+/* Dropdown menu */
+.canned-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+
+  z-index: 999; /* must be higher than cards */
+
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+
+  padding: 6px;
+
+  /* IMPORTANT: default hidden behavior */
+  display: block;
+}
+
+/* Hidden state (this is what was missing / broken) */
+.canned-dropdown-menu.hidden {
+  display: none;
+}
+
+/* Menu items */
+.canned-dropdown-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.canned-dropdown-item:hover {
+  background: #f3f4f6;
+}
+
+/* Help text spacing */
+.canned-dropdown + .help-text {
+  margin-top: 6px;
+  display: block;
+}
+/* ================================
+   CANNED RESPONSES DROPDOWN (TIGHT)
+   ================================ */
+
+.canned-dropdown-menu {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.canned-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.canned-item + .canned-item {
+  margin-top: 4px;
+}
+
+.canned-item:hover {
+  background: #f3f4f6;
+}
+
+.canned-title {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.canned-meta {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.canned-preview {
+  font-size: 12px;
+  color: #374151;
+  margin-top: 4px;
+  line-height: 1.4;
+  max-height: 2.8em; /* ~2 lines */
+  overflow: hidden;
+}
+
+/* ⭐ Recommended (advisory only) */
+.canned-item.recommended {
+  border-left: 3px solid #2563eb;
+  background: #eff6ff;
+}
+
+.canned-item.recommended .canned-title::before {
+  content: "★ ";
+  color: #2563eb;
+  font-weight: 700;
+}
+/* ================================
+   ⭐ Recommended canned response
+   (UI-only, no logic)
+   ================================ */
+
+.canned-item.recommended .canned-title::before {
+  content: "★ ";
+  color: #2563eb;          /* blue star */
+  font-weight: 700;
+}
+
+.canned-item.recommended {
+  border-left: 3px solid #2563eb;
+  background: #eff6ff;
+}

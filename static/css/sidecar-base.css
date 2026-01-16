@@ -20,6 +20,8 @@
   --fh-letter-spacing: -0.01em;
 
   /* ---------- Color tokens ---------- */
+  --fh-color-subtle-bg: #f9fafb;
+
   --fh-color-bg: #ffffff;
   --fh-color-surface: #ffffff;
 
@@ -98,6 +100,13 @@
   font-family: var(--fh-font-sans);
   letter-spacing: var(--fh-letter-spacing);
   color: inherit;
+}
+/* Normalize button typography (host-safe) */
+#ai-assistant-panel button {
+  font-family: var(--fh-font-sans);
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: var(--fh-letter-spacing);
 }
 
 /* Links – neutral by default, components decide styling */

@@ -47,16 +47,17 @@
 
 /* ---------- CONFIDENCE BAR COLORS ---------- */
 #ai-assistant-panel #confidence-bar.confidence-high {
-  background-color: #10b981;
+  background-color: var(--fh-color-success);
 }
 
 #ai-assistant-panel #confidence-bar.confidence-medium {
-  background-color: #f59e0b;
+  background-color: var(--fh-color-warning);
 }
 
 #ai-assistant-panel #confidence-bar.confidence-low {
-  background-color: #ef4444;
+  background-color: var(--fh-color-danger);
 }
+
 
 /* ---------- STATUS INDICATORS ---------- */
 #ai-assistant-panel .status-indicator {
@@ -113,10 +114,11 @@
 }
 
 #ai-assistant-panel #suggestions-list > div:hover {
-  background-color: #f9fafb;
+  background-color: var(--fh-color-subtle-bg);
   border-color: #d1d5db;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
+
 
 /* ---------- BUTTON FEEDBACK ---------- */
 /* No translateY — avoids jumpiness */
@@ -233,9 +235,9 @@
 
 /* ---------- RESPONSIVE (scoped) ---------- */
 @media (max-width: 1280px) {
-  #ai-assistant-panel #analysis-results > div {
-    padding: 14px;
-  }
+  #ai-assistant-panel #analysis-results > * {
+  animation: fh-fadeIn 0.2s ease;
+}
 }
 
 /* ---------- PRINT ---------- */

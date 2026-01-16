@@ -16,85 +16,33 @@ const ACTION_SNIPPETS = {
   "Provide accurate tracking information":
     "I’ll confirm the latest tracking information and share an update with you.\n\n",
 };
+
 // -------------------------------------
-// High-impact canned responses (v1)
+// Intent -> Recommended canned response (v1)
+// Used ONLY for recommendation/highlight.
+// Actual dropdown content is loaded from /static/data/canned_responses.json
 // -------------------------------------
 const CANNED_RESPONSES = {
   "Low or Zero Hashrate": {
     intents: ["not_hashing", "low_hashrate"],
-    body: `Hi there,
-
-If your Apollo II is still syncing, mining may appear stalled or show low or zero hashrate. This is expected behavior during initial sync.
-
-Mining will not behave normally until the node is fully synced. What sync percentage does the dashboard currently show?
-
-Best regards,
-FutureBit Support`,
   },
-
   "Dashboard / Network Access Issues": {
     intents: ["dashboard_access", "network_issue"],
-    body: `Hi there,
-
-If apollo.local isn’t loading, try accessing the unit using its local IP address instead.
-
-Please make sure the miner and your device are on the same network. Restarting the miner and router can also help.
-
-Tools like Angry IP Scanner can help locate the unit on your local network.
-
-Best regards,
-FutureBit Support`,
   },
-
   "Node Sync Behavior (What’s Normal)": {
     intents: ["sync_delay", "setup_help"],
-    body: `Hi there,
-
-During initial setup, node sync can take a significant amount of time and this is expected.
-
-Please ensure your internet connection is stable, keep the unit powered on, and avoid repeated reboots during sync.
-
-If the sync appears stalled, a screenshot of the node status page will help confirm what’s happening.
-
-Best regards,
-FutureBit Support`,
   },
-
   "Firmware Update Instructions": {
     intents: ["firmware_update"],
-    body: `Hi there,
-
-You can update Apollo II firmware directly from the dashboard.
-
-Go to Dashboard → Settings → Firmware, upload the latest firmware file, and allow the process to complete. The unit will reboot automatically when finished.
-
-If you are asking about flashing storage media instead, let me know before proceeding.
-
-Best regards,
-FutureBit Support`,
   },
-
   "Request for More Information": {
     intents: ["general_support"],
-    body: `Hi there,
-
-To help troubleshoot this accurately, please share:
-• Your product model
-• Current firmware version
-• A brief description of what you’re seeing
-• A screenshot or photo, if available
-
-With that information, I can guide next steps.
-
-Best regards,
-FutureBit Support`,
   },
 };
 
 // -------------------------------------
 // Sidecar UI Controller
 // -------------------------------------
-
 class AISidecar {
   constructor() {
     this.form = document.getElementById("draft-request-form");
@@ -103,35 +51,203 @@ class AISidecar {
     this.generateBtn = document.getElementById("generate-btn");
     this.resetBtn = document.getElementById("reset-btn");
 
+    // Draft textarea (where inserts should go)
+    this.draftTextarea =
+      document.getElementById("draft-text") ||
+      document.getElementById("draft-message-box");
+
+    // Canned dropdown refs
+    this.cannedBtn = document.getElementById("canned-dropdown-btn");
+    this.cannedMenu = document.getElementById("canned-dropdown-menu");
+
+    // State
+    this.cannedResponses = [];
+    this.recommendedCannedTitle = null;
+
+    // Wire base UI
     this.init();
+
+    // Load canned responses from JSON and render
+    this.loadCannedResponses();
   }
 
+  // -----------------------------
+  // Init + event wiring
+  // -----------------------------
   init() {
     // Form submission
-    this.form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      this.generateDraft();
-    });
+    if (this.form) {
+      this.form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        this.generateDraft();
+      });
+    }
 
     // Reset button
-    this.resetBtn.addEventListener("click", () => this.reset());
+    if (this.resetBtn) {
+      this.resetBtn.addEventListener("click", () => this.reset());
+    }
 
-    // Copy draft button
-    document
-      .getElementById("copy-draft-btn")
-      ?.addEventListener("click", () => this.copyDraft());
+    // Copy draft
+    const copyBtn = document.getElementById("copy-draft-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", () => this.copyDraft());
+    }
 
-    // Insert draft button (UI stub)
-    document
-      .getElementById("insert-draft-btn")
-      ?.addEventListener("click", () => {
+    // Insert draft (stub)
+    const insertBtn = document.getElementById("insert-draft-btn");
+    if (insertBtn) {
+      insertBtn.addEventListener("click", () => {
         this.showToast("Insert functionality coming soon");
       });
+    }
 
     // Collapsible sections
     this.initCollapsibles();
+
+    // Canned Responses dropdown open/close (wired ONCE)
+    if (this.cannedBtn && this.cannedMenu) {
+      this.cannedBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleCannedDropdown();
+      });
+
+      document.addEventListener("click", (e) => {
+        if (!this.cannedBtn || !this.cannedMenu) return;
+
+        const clickedInside =
+          this.cannedBtn.contains(e.target) ||
+          this.cannedMenu.contains(e.target);
+
+        if (!clickedInside) {
+          this.closeCannedDropdown();
+        }
+      });
+    }
   }
+
+  // -----------------------------
+  // Canned Responses (JSON source of truth)
+  // -----------------------------
+  async loadCannedResponses() {
+    try {
+      const res = await fetch("/static/data/canned_responses.json");
+      if (!res.ok) throw new Error("Failed to load canned responses");
+
+      const data = await res.json();
+      this.cannedResponses = Array.isArray(data) ? data : [];
+      this.renderCannedResponses();
+    } catch (err) {
+      console.error("Canned responses load error:", err);
+    }
+  }
+
+  getRecommendedCannedTitle(primaryIntent) {
+    if (!primaryIntent) return null;
+
+    const entries = Object.entries(CANNED_RESPONSES);
+    for (let i = 0; i < entries.length; i++) {
+      const title = entries[i][0];
+      const item = entries[i][1];
+      if (
+        item &&
+        Array.isArray(item.intents) &&
+        item.intents.includes(primaryIntent)
+      ) {
+        return title;
+      }
+    }
+    return null;
+  }
+
+  renderCannedResponses() {
+    if (!this.cannedMenu) return;
+
+    this.cannedMenu.innerHTML = "";
+
+    if (
+      !Array.isArray(this.cannedResponses) ||
+      this.cannedResponses.length === 0
+    ) {
+      const empty = document.createElement("div");
+      empty.className = "help-text";
+      empty.textContent = "No canned responses available.";
+      this.cannedMenu.appendChild(empty);
+      return;
+    }
+
+    for (let i = 0; i < this.cannedResponses.length; i++) {
+      const item = this.cannedResponses[i];
+
+      const title = item && item.title ? String(item.title) : "Untitled";
+      const category = item && item.category ? String(item.category) : "";
+      const content = item && item.content ? String(item.content) : "";
+
+      const isRecommended =
+        this.recommendedCannedTitle &&
+        (title === this.recommendedCannedTitle ||
+          title
+            .toLowerCase()
+            .includes(this.recommendedCannedTitle.toLowerCase().split(" ")[0]));
+
+      // ✅ DECLARE FIRST
+      const entry = document.createElement("button");
+      entry.type = "button";
+      entry.className = `canned-item${isRecommended ? " recommended" : ""}`;
+      entry.setAttribute("role", "menuitem");
+      entry.dataset.cannedId = item && item.id ? String(item.id) : title;
+
+      const preview = content.slice(0, 120) + (content.length > 120 ? "…" : "");
+      entry.innerHTML = `
+      <div class="canned-title">${title}</div>
+      <div class="canned-meta">${category}</div>
+      <div class="canned-preview">${preview}</div>
+    `;
+
+      entry.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.insertCannedResponse({ title, content });
+        this.closeCannedDropdown();
+      });
+
+      this.cannedMenu.appendChild(entry);
+    }
+  }
+
+  insertCannedResponse(item) {
+    if (!this.draftTextarea) return;
+
+    const current = this.draftTextarea.value || "";
+    const spacer = current.trim() ? "\n\n" : "";
+    this.draftTextarea.value = current + spacer + (item.content || "");
+    this.draftTextarea.focus();
+
+    this.showToast(`Inserted: ${item.title}`);
+  }
+
+  toggleCannedDropdown() {
+    if (!this.cannedMenu || !this.cannedBtn) return;
+
+    const isOpen = this.cannedBtn.getAttribute("aria-expanded") === "true";
+    this.cannedBtn.setAttribute("aria-expanded", String(!isOpen));
+    this.cannedMenu.classList.toggle("hidden", isOpen);
+  }
+
+  closeCannedDropdown() {
+    if (!this.cannedMenu || !this.cannedBtn) return;
+
+    this.cannedMenu.classList.add("hidden");
+    this.cannedBtn.setAttribute("aria-expanded", "false");
+  }
+
+  // -----------------------------
+  // Draft generation
+  // -----------------------------
   async generateDraft() {
+    if (!this.form) return;
+
     const formData = new FormData(this.form);
 
     const payload = {
@@ -142,9 +258,11 @@ class AISidecar {
     };
 
     // Loading state
-    this.generateBtn.disabled = true;
-    const originalHTML = this.generateBtn.innerHTML;
-    this.generateBtn.innerHTML = "Generating…";
+    const originalHTML = this.generateBtn ? this.generateBtn.innerHTML : "";
+    if (this.generateBtn) {
+      this.generateBtn.disabled = true;
+      this.generateBtn.innerHTML = "Generating…";
+    }
 
     try {
       const response = await fetch("/api/v1/draft", {
@@ -156,131 +274,180 @@ class AISidecar {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error?.message || "Failed to generate draft");
+        throw new Error(
+          (data && data.error && data.error.message) ||
+            "Failed to generate draft"
+        );
       }
 
       console.log("FULL RESPONSE", data);
-
-      // 🔗 Render everything from ONE place
       this.renderResponse(data);
     } catch (error) {
       console.error("Draft error:", error);
-      this.showToast(error.message || "Failed to generate draft", "error");
+      this.showToast(
+        (error && error.message) || "Failed to generate draft",
+        "error"
+      );
     } finally {
-      this.generateBtn.disabled = false;
-      this.generateBtn.innerHTML = originalHTML;
+      if (this.generateBtn) {
+        this.generateBtn.disabled = false;
+        this.generateBtn.innerHTML = originalHTML;
+      }
     }
   }
+  resolveRecommendedCannedTitle(primaryIntent) {
+    if (!primaryIntent) return null;
 
+    for (const [title, cfg] of Object.entries(CANNED_RESPONSES)) {
+      if (Array.isArray(cfg.intents) && cfg.intents.includes(primaryIntent)) {
+        return title;
+      }
+    }
+    return null;
+  }
+
+  // -----------------------------
+  // Rendering
+  // -----------------------------
   renderResponse(data) {
     // Hide empty state
-    this.emptyState.classList.add("hidden");
+    if (this.emptyState) this.emptyState.classList.add("hidden");
 
-    // Show the real cards (yesterday UI)
-    document.getElementById("agent-guidance-card")?.classList.remove("hidden");
-    document.getElementById("confidence-card")?.classList.remove("hidden");
-    document.getElementById("draft-card")?.classList.remove("hidden");
-    document.getElementById("actions-card")?.classList.remove("hidden");
-    document.getElementById("quick-replies-card")?.classList.remove("hidden");
-    document.getElementById("knowledge-card")?.classList.remove("hidden");
-    document.getElementById("conversation-card")?.classList.remove("hidden");
+    // Show response container
+    if (this.responseContainer)
+      this.responseContainer.classList.remove("hidden");
+
+    // Show cards (if ids exist in DOM)
+    const idsToShow = [
+      "agent-guidance-card",
+      "confidence-card",
+      "draft-card",
+      "actions-card",
+      "quick-replies-card",
+      "knowledge-card",
+      "conversation-card",
+    ];
+    for (let i = 0; i < idsToShow.length; i++) {
+      const el = document.getElementById(idsToShow[i]);
+      if (el) el.classList.remove("hidden");
+    }
 
     // 1. Agent Guidance
-    this.renderGuidance(data.agent_guidance);
+    this.renderGuidance(data ? data.agent_guidance : null);
 
     // 2. Confidence & Risk
-    this.renderConfidenceRisk(data.intent_classification);
+    this.renderConfidenceRisk(data ? data.intent_classification : null);
 
     // 3. Intent Classification
-    this.renderIntent(data.intent_classification);
+    this.renderIntent(data ? data.intent_classification : null);
 
     // 4. Draft Response
-    this.renderDraft(data.draft);
-    console.log("renderDraft called", data.draft);
+    this.renderDraft(data ? data.draft : null);
 
     // 5. Suggested Actions
-    this.renderSuggestedActions(
-      data.agent_guidance.suggested_actions,
-      data.intent_classification.primary_intent
-    );
+    const suggested =
+      data && data.agent_guidance
+        ? data.agent_guidance.suggested_actions
+        : null;
+    this.renderSuggestedActions(suggested);
 
-    // 6. Canned Response (if present)
-    this.renderCannedResponse(data.agent_guidance.canned_response_suggestion);
+    // 6. Canned response recommendation + highlight
+    const primaryIntent =
+      data && data.intent_classification
+        ? data.intent_classification.primary_intent
+        : null;
+
+    // ⭐ Resolve recommendation AFTER intent is known
+    this.recommendedCannedTitle =
+      this.resolveRecommendedCannedTitle(primaryIntent);
+
+    // Re-render dropdown so highlight applies
+    this.renderCannedResponses();
 
     // 7. Conversation Context
     this.renderConversationContext();
 
-    // Scroll to top of response
-    this.responseContainer.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
+    // Scroll to top
+    if (this.responseContainer && this.responseContainer.scrollIntoView) {
+      this.responseContainer.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
   }
 
   renderGuidance(guidance) {
-    // Badges
     const badgesContainer = document.getElementById("guidance-badges");
     let badges = "";
 
-    if (guidance.auto_send_eligible) {
+    if (guidance && guidance.auto_send_eligible) {
       badges += '<span class="badge badge-success">Auto-Send Eligible</span>';
     }
-
-    if (guidance.requires_review) {
+    if (guidance && guidance.requires_review) {
       badges += '<span class="badge badge-warning">Requires Review</span>';
     }
+    if (badgesContainer) badgesContainer.innerHTML = badges;
 
-    badgesContainer.innerHTML = badges;
+    const reasonEl = document.getElementById("guidance-reason");
+    const recEl = document.getElementById("guidance-recommendation");
 
-    // Reason & Recommendation
-    document.getElementById("guidance-reason").textContent =
-      guidance.reason || "N/A";
-    document.getElementById("guidance-recommendation").textContent =
-      guidance.recommendation || "N/A";
+    if (reasonEl) reasonEl.textContent = (guidance && guidance.reason) || "N/A";
+    if (recEl)
+      recEl.textContent = (guidance && guidance.recommendation) || "N/A";
   }
 
   renderConfidenceRisk(classification) {
+    if (!classification || !classification.confidence) return;
+
     const confidence = classification.confidence;
+    const percentage = Math.round((confidence.overall || 0) * 100);
 
-    // Confidence percentage
-    const percentage = Math.round(confidence.overall * 100);
-    document.getElementById("confidence-percentage").textContent =
-      percentage + "%";
+    const pctEl = document.getElementById("confidence-percentage");
+    if (pctEl) pctEl.textContent = percentage + "%";
 
-    // Confidence label badge
     const labelEl = document.getElementById("confidence-label");
-    labelEl.textContent = confidence.label.toUpperCase();
-    labelEl.className = `metric-badge confidence-${confidence.label}`;
+    if (labelEl) {
+      const label = (confidence.label || "unknown").toLowerCase();
+      labelEl.textContent = label.toUpperCase();
+      labelEl.className = `metric-badge confidence-${label}`;
+    }
 
-    // Safety mode
     const safetyEl = document.getElementById("safety-mode");
-    safetyEl.textContent = classification.safety_mode.toUpperCase();
-    safetyEl.className = `metric-badge safety-${classification.safety_mode}`;
+    if (safetyEl) {
+      const sm = (classification.safety_mode || "unknown").toLowerCase();
+      safetyEl.textContent = sm.toUpperCase();
+      safetyEl.className = `metric-badge safety-${sm}`;
+    }
 
-    // Ambiguity
     const ambiguityEl = document.getElementById("ambiguity-status");
-    if (confidence.ambiguity_detected) {
-      ambiguityEl.textContent = "DETECTED";
-      ambiguityEl.className = "metric-badge badge-warning";
-    } else {
-      ambiguityEl.textContent = "NONE";
-      ambiguityEl.className = "metric-badge badge-success";
+    if (ambiguityEl) {
+      if (confidence.ambiguity_detected) {
+        ambiguityEl.textContent = "DETECTED";
+        ambiguityEl.className = "metric-badge badge-warning";
+      } else {
+        ambiguityEl.textContent = "NONE";
+        ambiguityEl.className = "metric-badge badge-success";
+      }
     }
   }
 
   renderIntent(classification) {
-    // Primary intent
-    const primaryEl = document.getElementById("primary-intent");
-    primaryEl.textContent = this.formatIntent(classification.primary_intent);
+    if (!classification) return;
 
-    // Secondary intents
+    const primaryEl = document.getElementById("primary-intent");
+    if (primaryEl) {
+      primaryEl.textContent = this.formatIntent(classification.primary_intent);
+    }
+
     const secondaryContainer = document.getElementById(
       "secondary-intents-container"
     );
     const secondaryEl = document.getElementById("secondary-intents");
 
     if (
-      classification.secondary_intents &&
+      secondaryContainer &&
+      secondaryEl &&
+      Array.isArray(classification.secondary_intents) &&
       classification.secondary_intents.length > 0
     ) {
       secondaryEl.innerHTML = classification.secondary_intents
@@ -290,144 +457,129 @@ class AISidecar {
         )
         .join("");
       secondaryContainer.classList.remove("hidden");
-    } else {
+    } else if (secondaryContainer) {
       secondaryContainer.classList.add("hidden");
     }
 
-    // Device behavior detected
     const deviceAlert = document.getElementById("device-behavior-alert");
-    if (classification.device_behavior_detected) {
-      deviceAlert.classList.remove("hidden");
-    } else {
-      deviceAlert.classList.add("hidden");
+    if (deviceAlert) {
+      if (classification.device_behavior_detected) {
+        deviceAlert.classList.remove("hidden");
+      } else {
+        deviceAlert.classList.add("hidden");
+      }
     }
 
-    // Attempted actions
     const actionsContainer = document.getElementById(
       "attempted-actions-container"
     );
     const actionsEl = document.getElementById("attempted-actions");
 
     if (
-      classification.attempted_actions &&
+      actionsContainer &&
+      actionsEl &&
+      Array.isArray(classification.attempted_actions) &&
       classification.attempted_actions.length > 0
     ) {
       actionsEl.textContent = classification.attempted_actions.join(", ");
       actionsContainer.classList.remove("hidden");
-    } else {
+    } else if (actionsContainer) {
       actionsContainer.classList.add("hidden");
     }
   }
 
   renderDraft(draft) {
-    // Draft type badge
-    const typeBadge = document.getElementById("draft-type-badge");
-    typeBadge.textContent = draft.type.toUpperCase();
-    typeBadge.className = `badge draft-${draft.type}`;
+    if (!draft) return;
 
-    // Draft text
-    document.getElementById("draft-text").value = draft.response_text;
+    const typeBadge = document.getElementById("draft-type-badge");
+    if (typeBadge) {
+      const t = (draft.type || "draft").toLowerCase();
+      typeBadge.textContent = t.toUpperCase();
+      typeBadge.className = `badge draft-${t}`;
+    }
+
+    const textarea = document.getElementById("draft-text");
+    if (textarea) {
+      textarea.value = draft.response_text || "";
+    }
   }
 
-  renderSuggestedActions(actions, intent) {
+  renderSuggestedActions(actions) {
     const list = document.getElementById("suggested-actions-list");
+    if (!list) return;
+
     list.innerHTML = "";
 
-    // 1️⃣ Pull intent-matched canned responses
-    const canned = this.getCannedForIntent(intent);
-
-    // ⭐ Render canned responses FIRST (as buttons)
-    canned.forEach((cannedItem) => {
-      const li = document.createElement("li");
-      li.className = "suggested-action canned clickable";
-
-      li.innerHTML = `⭐ ${this.escapeHtml(cannedItem.title)}`;
-
-      li.addEventListener("click", () => {
-        const textarea = document.getElementById("draft-text");
-        textarea.value = cannedItem.body;
-        textarea.focus();
-
-        this.showToast("Canned response inserted", "success");
-      });
-
-      list.appendChild(li);
-    });
-
-    // 2️⃣ Render normal suggested actions (non-clickable guidance)
-    if (actions && actions.length > 0) {
+    if (Array.isArray(actions) && actions.length > 0) {
       actions.forEach((action) => {
         const li = document.createElement("li");
         li.className = "suggested-action";
         li.textContent = action;
+
+        li.addEventListener("click", () => {
+          const snippet = ACTION_SNIPPETS[action];
+          if (snippet && this.draftTextarea) {
+            const cur = this.draftTextarea.value || "";
+            this.draftTextarea.value = cur + snippet;
+            this.draftTextarea.focus();
+            this.showToast("Inserted suggested action text");
+          }
+        });
+
         list.appendChild(li);
       });
     }
 
-    // 3️⃣ Empty state
     if (list.children.length === 0) {
       list.innerHTML =
         '<li class="help-text">No suggested actions available</li>';
     }
   }
 
-  renderCannedResponse(cannedResponse) {
-    const container = document.getElementById("canned-response-container");
-    const btn = document.getElementById("canned-response-btn");
-    const text = document.getElementById("canned-response-text");
-
-    if (cannedResponse) {
-      text.textContent = cannedResponse;
-      container.classList.remove("hidden");
-
-      btn.onclick = () => {
-        this.showToast("Canned response functionality coming soon");
-      };
-    } else {
-      container.classList.add("hidden");
-    }
-  }
-
   renderConversationContext() {
     const messagesContainer = document.getElementById("conversation-messages");
+    if (!messagesContainer) return;
 
-    // For now, show empty state since we're not passing history
     messagesContainer.innerHTML =
       '<p class="help-text">No conversation history in this request</p>';
   }
 
   initCollapsibles() {
     const toggles = document.querySelectorAll(".section-toggle");
-
     toggles.forEach((toggle) => {
       toggle.addEventListener("click", () => {
         const content = toggle.nextElementSibling;
         toggle.classList.toggle("collapsed");
-        content.classList.toggle("collapsed");
+        if (content) content.classList.toggle("collapsed");
       });
     });
   }
 
   copyDraft() {
     const textarea = document.getElementById("draft-text");
+    if (!textarea) return;
+
     textarea.select();
     document.execCommand("copy");
     this.showToast("Draft copied to clipboard");
   }
 
   reset() {
-    // Reset form
-    this.form.reset();
+    if (this.form) this.form.reset();
 
-    // Hide response, show empty state
-    this.responseContainer.classList.add("hidden");
-    this.emptyState.classList.remove("hidden");
+    if (this.responseContainer) this.responseContainer.classList.add("hidden");
+    if (this.emptyState) this.emptyState.classList.remove("hidden");
+
+    if (this.cannedMenu) this.cannedMenu.classList.add("hidden");
+    if (this.cannedBtn) this.cannedBtn.setAttribute("aria-expanded", "false");
 
     this.showToast("Form cleared");
   }
 
   showToast(message, type = "success") {
     const toast = document.getElementById("toast");
+    if (!toast) return;
+
     toast.textContent = message;
     toast.className = `toast toast-${type}`;
     toast.classList.remove("hidden");
@@ -438,21 +590,11 @@ class AISidecar {
   }
 
   formatIntent(intent) {
-    return intent
+    if (!intent) return "";
+    return String(intent)
       .split("_")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" ");
-  }
-  getCannedForIntent(intent) {
-    return Object.values(CANNED_RESPONSES).filter((c) =>
-      c.intents.includes(intent)
-    );
-  }
-
-  escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
-    return div.innerHTML;
   }
 }
 

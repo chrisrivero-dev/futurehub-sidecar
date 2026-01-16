@@ -1,5 +1,5 @@
 <!-- templates/ai_sidecar.html -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -54,6 +54,7 @@
                   placeholder="Ticket subject"
                 />
               </div>
+
               <div class="form-group">
                 <label for="latest-message">Latest Message *</label>
                 <textarea
@@ -65,6 +66,7 @@
                   placeholder="Customer's most recent message"
                 ></textarea>
               </div>
+
               <div class="form-group">
                 <label for="customer-name">Customer Name</label>
                 <input
@@ -75,6 +77,7 @@
                   placeholder="Optional"
                 />
               </div>
+
               <button
                 type="submit"
                 id="generate-btn"
@@ -141,9 +144,10 @@
                 <div class="metric-row">
                   <span class="metric-label">Confidence</span>
                   <div class="metric-value">
-                    <span id="confidence-percentage" class="metric-number"
-                      >--</span
-                    >
+                    <span
+                      id="confidence-percentage"
+                      class="metric-number"
+                    ></span>
                     <span id="confidence-label" class="metric-badge"></span>
                   </div>
                 </div>
@@ -170,20 +174,6 @@
                   <span class="label-xs">Secondary</span>
                   <div id="secondary-intents" class="intent-chips"></div>
                 </div>
-                <div id="device-behavior-alert" class="hidden alert-warning">
-                  <svg class="icon" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fill-rule="evenodd"
-                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  Device behavior detected
-                </div>
-                <div id="attempted-actions-container" class="hidden">
-                  <span class="label-xs">Attempted Actions</span>
-                  <span id="attempted-actions" class="text-sm"></span>
-                </div>
               </div>
             </section>
 
@@ -191,28 +181,6 @@
             <section class="section-card">
               <div class="section-header">
                 <h2 class="section-title">Draft Response</h2>
-                <div class="section-controls">
-                  <span id="draft-type-badge" class="badge"></span>
-                  <button
-                    id="copy-draft-btn"
-                    class="btn-icon btn-sm"
-                    title="Copy draft"
-                  >
-                    <svg
-                      class="icon"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                      />
-                    </svg>
-                  </button>
-                </div>
               </div>
               <textarea
                 id="draft-text"
@@ -223,136 +191,61 @@
                 id="insert-draft-btn"
                 class="btn-secondary btn-block btn-sm"
               >
-                <svg
-                  class="icon"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                  />
-                </svg>
                 Insert into Reply
               </button>
             </section>
 
             <!-- 5. Suggested Actions -->
             <section class="section-card">
-              <button class="section-toggle" id="toggle-actions">
-                <h2 class="section-title">Suggested Actions</h2>
-                <svg
-                  class="icon toggle-icon"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-              <div id="actions-content" class="collapsible-content">
-                <ol id="suggested-actions-list" class="actions-list"></ol>
-              </div>
+              <h2 class="section-title">Suggested Actions</h2>
+              <ol id="suggested-actions-list" class="actions-list"></ol>
             </section>
 
-            <!-- 6. Quick Replies -->
+            <!-- 6. Canned Responses -->
             <section class="section-card">
-              <h2 class="section-title">Quick Replies</h2>
-              <div id="canned-response-container" class="hidden">
-                <button id="canned-response-btn" class="quick-reply-btn">
+              <h3 class="section-title">Canned Responses</h3>
+
+              <div class="canned-dropdown">
+                <button
+                  id="canned-dropdown-btn"
+                  class="btn-secondary btn-block canned-dropdown-trigger"
+                  type="button"
+                  aria-expanded="false"
+                >
+                  <span>Select a canned response…</span>
                   <svg
-                    class="icon"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                    class="dropdown-caret"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
                   >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M5 13l4 4L19 7"
-                    />
+                    <path d="M5.5 7.5L10 12l4.5-4.5" />
                   </svg>
-                  <span id="canned-response-text"></span>
                 </button>
+
+                <div
+                  id="canned-dropdown-menu"
+                  class="canned-dropdown-menu hidden"
+                  role="menu"
+                  aria-label="Canned responses"
+                ></div>
               </div>
-              <div class="quick-replies-placeholder">
-                <button class="quick-reply-btn" disabled>
-                  Request Order Number
-                </button>
-                <button class="quick-reply-btn" disabled>
-                  Request Debug Logs
-                </button>
-                <button class="quick-reply-btn" disabled>
-                  Setup Instructions
-                </button>
-              </div>
-              <p class="help-text">Knowledge-based replies (placeholder)</p>
+
+              <p class="help-text">
+                Select a response to insert it into the draft. ★ indicates
+                AI-recommended responses.
+              </p>
             </section>
 
             <!-- 7. Knowledge Base Search -->
             <section class="section-card">
               <h2 class="section-title">Knowledge Base</h2>
-              <div class="search-input-group">
-                <input
-                  type="text"
-                  id="kb-search-input"
-                  placeholder="Search articles..."
-                  disabled
-                />
-                <button class="btn-icon btn-sm" disabled>
-                  <svg
-                    class="icon"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <div class="kb-results">
-                <p class="help-text">Search integration coming soon</p>
-              </div>
+              <p class="help-text">Search integration coming soon</p>
             </section>
 
             <!-- 8. Conversation Context -->
             <section class="section-card">
-              <button class="section-toggle collapsed" id="toggle-context">
-                <h2 class="section-title">Conversation Context</h2>
-                <svg
-                  class="icon toggle-icon"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-              <div id="context-content" class="collapsible-content collapsed">
-                <div
-                  id="conversation-messages"
-                  class="conversation-thread"
-                ></div>
-              </div>
+              <h2 class="section-title">Conversation Context</h2>
+              <div id="conversation-messages"></div>
             </section>
           </div>
         </div>

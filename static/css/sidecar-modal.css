@@ -11,11 +11,13 @@
   inset: 0;
   background: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px); /* Safari / embedded iframe safety */
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 40; /* conservative, avoids host collisions */
 }
+
 
 /* Hidden state */
 #ai-assistant-panel .fh-confirmation-modal.is-hidden {
@@ -55,7 +57,8 @@
   padding: var(--fh-space-sm);
   border: 1px solid var(--fh-color-border);
   border-radius: var(--fh-radius-sm);
-  background: #fafafa;
+  background: var(--fh-color-subtle-bg);
+
 }
 
 /* ---------- Keyboard Shortcut Badge ---------- */
