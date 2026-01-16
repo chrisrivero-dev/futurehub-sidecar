@@ -1,0 +1,23 @@
+{% extends "base.html" %} {% block title %}Ticket {{ ticket.id }}{% endblock %}
+{% block content %}
+<div class="flex h-screen" data-ticket-id="{{ ticket.id }}">
+  <!-- Main content -->
+  <div class="flex-1 overflow-y-auto">
+    <div class="max-w-4xl mx-auto px-4 py-6">
+      <!-- Header -->
+      <div class="bg-white border rounded-lg p-6 mb-4">
+        <h1 class="text-2xl font-bold text-gray-900">{{ ticket.subject }}</h1>
+        <div class="text-sm text-gray-500 mt-1">
+          {{ ticket.customer_email }} · {{ ticket.created_at.strftime('%b %d,
+          %Y') }}
+        </div>
+      </div>
+
+      <!-- Description -->
+      <div class="bg-white border rounded-lg p-6">
+        {{ ticket.description | safe }}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %} {% endblock %}

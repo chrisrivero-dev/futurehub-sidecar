@@ -1,0 +1,39 @@
+{% extends "base.html" %} {% block title %}Create Ticket{% endblock %} {% block
+content %}
+<div
+  class="max-w-xl mx-auto mt-10 bg-white border border-gray-200 rounded-lg p-6"
+>
+  <h1 class="text-xl font-semibold text-gray-900 mb-4">Create Ticket</h1>
+
+  <form method="POST">
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        Subject
+      </label>
+      <input
+        name="subject"
+        required
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+      />
+    </div>
+
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        Description
+      </label>
+      <textarea
+        name="description"
+        rows="4"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+      ></textarea>
+    </div>
+
+    <button
+      type="submit"
+      class="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+    >
+      Create Ticket
+    </button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+# Knowledge Retrieval Configuration (Phase 4A)
+# Configuration for vector store, embeddings, and sync
+
+vector_store:
+  provider: "chromadb"
+  path: "./data/vector_store"
+  collection_name: "kb_articles"
+
+embeddings:
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  dimension: 384
+  chunk_size: 500 # words per chunk
+  chunk_overlap: 50 # overlapping words
+
+retrieval:
+  top_k: 3 # Top 3 sources (locked decision)
+  threshold: 0.7 # Minimum similarity score
+  timeout_ms: 100 # Max retrieval time
+  excerpt_length: 150 # Excerpt length (locked decision)
+
+sync:
+  enabled: true
+  interval: "daily" # Locked decision: daily periodic sync
+  host_api_url: "http://localhost:3000/api/kb/articles"
+  cache_path: "./data/articles.json"
+
+# Coverage thresholds (locked decisions)
+coverage:
+  high_threshold: 0.75
+  medium_threshold: 0.6
+  low_threshold: 0.4

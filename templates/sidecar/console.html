@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>FutureHub AI Sidecar</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 20px;
+      }
+      textarea {
+        width: 100%;
+        height: 120px;
+      }
+      pre {
+        background: #111;
+        color: #0f0;
+        padding: 10px;
+      }
+      button {
+        padding: 8px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>AI Sidecar Console</h2>
+
+    <label>Subject</label><br />
+    <input
+      id="subject"
+      style="width: 100%"
+      value="Where is my order?"
+    /><br /><br />
+
+    <label>Latest Message</label><br />
+    <textarea id="message">My Apollo hasn’t shipped yet</textarea><br />
+
+    <button onclick="runDraft()">Generate Draft</button>
+
+    <h3>Response</h3>
+    <pre id="output">(waiting)</pre>
+
+    <script>
+      async function runDraft() {
+        const res = await fetch("/api/v1/draft", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subject: document.getElementById("subject").value,
+            latest_message: document.getElementById("message").value,
+            conversation_history: [],
+          }),
+        });
+
+        const data = await res.json();
+        document.getElementById("output").textContent = JSON.stringify(
+          data,
+          null,
+          2
+        );
+      }
+    </script>
+  </body>
+</html>

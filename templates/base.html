@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>{% block title %}FutureHub{% endblock %}</title>
+
+    <!-- Core layout styles -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/base.css') }}"
+    />
+
+    <!-- Sidecar / AI styles -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/ai_sidecar.css') }}"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/ai_assistant.css') }}"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/confirmation_modal.css') }}"
+    />
+
+    {% block extra_css %}{% endblock %}
+  </head>
+
+  <body class="h-full bg-gray-50">
+    {% block content %}{% endblock %} {% block extra_js %}{% endblock %}
+  </body>
+</html>

@@ -1,0 +1,103 @@
+/* static/css/confirmation_modal.css */
+/* Confirmation Modal Styling - Day 5 */
+
+/* Modal Backdrop */
+#send-confirmation-modal {
+  backdrop-filter: blur(2px);
+}
+
+/* Modal Animation */
+#send-confirmation-modal > div:nth-child(2) > div {
+  animation: modalSlideIn 0.2s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Modal Close on Hidden */
+#send-confirmation-modal.hidden {
+  display: none;
+}
+
+/* Draft Preview in Modal */
+#modal-draft-preview {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Keyboard Shortcut Badge */
+kbd {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  font-size: 0.75rem;
+}
+
+/* Button States */
+#modal-confirm-btn:disabled,
+#modal-cancel-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+#modal-confirm-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+#modal-cancel-btn:not(:disabled):hover {
+  background-color: #f9fafb;
+}
+
+/* Focus Styles */
+#modal-confirm-btn:focus,
+#modal-cancel-btn:focus,
+#modal-close-btn:focus {
+  outline: none;
+  ring: 2px;
+  ring-color: #3b82f6;
+  ring-offset: 2px;
+}
+
+/* Warning Notice */
+.bg-yellow-50 {
+  background-color: #fefce8;
+}
+
+.border-yellow-200 {
+  border-color: #fde68a;
+}
+
+.text-yellow-800 {
+  color: #92400e;
+}
+
+.text-yellow-700 {
+  color: #a16207;
+}
+
+.text-yellow-600 {
+  color: #ca8a04;
+}
+
+/* Spinner Animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}

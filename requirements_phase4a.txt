@@ -1,0 +1,23 @@
+# Phase 4A: Knowledge Retrieval Dependencies
+
+# Existing dependencies (from v1.0)
+flask==3.0.0
+pytest==7.4.3
+
+# Phase 4A: Vector Store
+chromadb==0.4.22
+
+# Phase 4A: Embeddings (Lightweight option)
+sentence-transformers==2.2.2
+torch>=2.6.0 # Required by sentence-transformers
+
+# Alternative Lightweight Option (comment out above, uncomment below):
+# onnxruntime==1.16.0  # ~300MB instead of ~1.5GB
+# transformers==4.35.0
+
+# Phase 4A: Utilities
+numpy==1.24.3
+requests==2.31.0
+pyyaml==6.0.1
+
+# Note: Total size ~1.5GB (PyTorch) or ~300MB (ONNX runtime)
