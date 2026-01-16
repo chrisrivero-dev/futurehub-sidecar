@@ -9,11 +9,15 @@ from flask import Flask
 # Create Flask app FIRST
 # -------------------------
 app = Flask(__name__)
-from flask import redirect, url_for
+from flask import Flask, redirect, url_for
+
+app = Flask(__name__)
 
 @app.route("/", methods=["GET"])
 def home():
-    return redirect(url_for("tickets.ticket_list"))
+    return redirect(url_for("sidecar_ui.sidecar_console"))
+
+
 
 
 # -------------------------
@@ -24,7 +28,7 @@ from routes.inbound_email import inbound_email_bp
 from routes.tickets import tickets_bp
 from routes.ai_draft import ai_draft_bp
 from routes.sidecar_ui import sidecar_ui_bp
-
+from flask import redirect, url_for
 
 
 # -------------------------

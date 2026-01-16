@@ -1,11 +1,15 @@
 /* ============================================
-   AI ASSISTANT – INTERACTIONS & STATES
-   Scoped companion to ai_sidecar.css
+   SIDECAR STATES — INTERACTIONS & UI FEEDBACK
+   (Refactored from ai_assistant.css)
+   SAFETY:
+   - Fully scoped under #ai-assistant-panel
+   - No global selectors
+   - No keyframe name collisions
    ============================================ */
 
-/* ---------- ANIMATIONS ---------- */
+/* ---------- ANIMATIONS (scoped names to prevent collisions) ---------- */
 
-@keyframes fadeIn {
+@keyframes fh-fadeIn {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -16,7 +20,7 @@
   }
 }
 
-@keyframes pulse {
+@keyframes fh-pulse {
   0%,
   100% {
     opacity: 1;
@@ -26,7 +30,7 @@
   }
 }
 
-@keyframes spin {
+@keyframes fh-spin {
   from {
     transform: rotate(0deg);
   }
@@ -37,27 +41,24 @@
 
 /* ---------- CARD APPEAR ---------- */
 /* Subtle only — no layout shift */
-
 #ai-assistant-panel #analysis-results > div {
-  animation: fadeIn 0.2s ease;
+  animation: fh-fadeIn 0.2s ease;
 }
 
 /* ---------- CONFIDENCE BAR COLORS ---------- */
-
-#confidence-bar.confidence-high {
+#ai-assistant-panel #confidence-bar.confidence-high {
   background-color: #10b981;
 }
 
-#confidence-bar.confidence-medium {
+#ai-assistant-panel #confidence-bar.confidence-medium {
   background-color: #f59e0b;
 }
 
-#confidence-bar.confidence-low {
+#ai-assistant-panel #confidence-bar.confidence-low {
   background-color: #ef4444;
 }
 
 /* ---------- STATUS INDICATORS ---------- */
-
 #ai-assistant-panel .status-indicator {
   display: inline-flex;
   align-items: center;
@@ -72,43 +73,46 @@
   border-radius: 50%;
 }
 
-.status-idle::before {
+/* Status classes must be scoped to prevent host collisions */
+#ai-assistant-panel .status-idle::before {
   background-color: #9ca3af;
 }
-.status-processing::before {
+
+#ai-assistant-panel .status-processing::before {
   background-color: #3b82f6;
-  animation: pulse 1.5s infinite;
+  animation: fh-pulse 1.5s infinite;
 }
-.status-completed::before {
+
+#ai-assistant-panel .status-completed::before {
   background-color: #10b981;
 }
-.status-failed::before {
+
+#ai-assistant-panel .status-failed::before {
   background-color: #ef4444;
 }
-.status-timeout::before {
+
+#ai-assistant-panel .status-timeout::before {
   background-color: #f59e0b;
 }
 
 /* ---------- STATUS CARD HOVER ---------- */
 /* Shadow only — no transform */
-
-#ai-status-container > div > div {
+#ai-assistant-panel #ai-status-container > div > div {
   transition: box-shadow 0.15s ease;
 }
 
-#ai-status-container > div > div:hover {
+#ai-assistant-panel #ai-status-container > div > div:hover {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
 /* ---------- SUGGESTIONS ---------- */
 /* Keep hover, remove aggressive movement */
-
-#suggestions-list > div {
+#ai-assistant-panel #suggestions-list > div {
   transition: background-color 0.15s ease, border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
 
-#suggestions-list > div:hover {
+#ai-assistant-panel #suggestions-list > div:hover {
   background-color: #f9fafb;
   border-color: #d1d5db;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
@@ -116,40 +120,36 @@
 
 /* ---------- BUTTON FEEDBACK ---------- */
 /* No translateY — avoids jumpiness */
-
-#ai-analyze-btn {
+#ai-assistant-panel #ai-analyze-btn {
   transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-#ai-analyze-btn:not(:disabled):hover {
+#ai-assistant-panel #ai-analyze-btn:not(:disabled):hover {
   box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
 }
 
 /* ---------- AUTO-SEND STATES ---------- */
-
-#eligible-state,
-#not-eligible-state,
-#not-evaluated-state {
-  animation: fadeIn 0.2s ease;
+#ai-assistant-panel #eligible-state,
+#ai-assistant-panel #not-eligible-state,
+#ai-assistant-panel #not-evaluated-state {
+  animation: fh-fadeIn 0.2s ease;
 }
 
-#eligible-state {
+#ai-assistant-panel #eligible-state {
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.15);
 }
 
 /* ---------- LOADING SPINNER ---------- */
-
 #ai-assistant-panel .ai-spinner {
   width: 16px;
   height: 16px;
   border: 2px solid #e5e7eb;
   border-top-color: #3b82f6;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: fh-spin 0.8s linear infinite;
 }
 
 /* ---------- INTENT BADGES ---------- */
-
 #ai-assistant-panel .intent-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -160,76 +160,85 @@
   letter-spacing: 0.025em;
 }
 
-.intent-shipping_status {
+/* Intent classes scoped to panel */
+#ai-assistant-panel .intent-shipping_status {
   background: #dbeafe;
   color: #1e40af;
 }
-.intent-general_question {
+
+#ai-assistant-panel .intent-general_question {
   background: #f3e8ff;
   color: #6b21a8;
 }
-.intent-setup_help {
+
+#ai-assistant-panel .intent-setup_help {
   background: #dcfce7;
   color: #166534;
 }
-.intent-sync_panic {
+
+#ai-assistant-panel .intent-sync_panic {
   background: #fef3c7;
   color: #92400e;
 }
-.intent-not_hashing {
+
+#ai-assistant-panel .intent-not_hashing {
   background: #fee2e2;
   color: #991b1b;
 }
-.intent-diagnostic_intake {
+
+#ai-assistant-panel .intent-diagnostic_intake {
   background: #ffedd5;
   color: #9a3412;
 }
-.intent-hardware_failure {
+
+#ai-assistant-panel .intent-hardware_failure {
   background: #fecaca;
   color: #7f1d1d;
 }
 
-/* ---------- URGENCY ---------- */
-
-.urgency-low {
+/* ---------- URGENCY (scoped) ---------- */
+#ai-assistant-panel .urgency-low {
   color: #059669;
 }
-.urgency-medium {
+
+#ai-assistant-panel .urgency-medium {
   color: #d97706;
 }
-.urgency-high {
+
+#ai-assistant-panel .urgency-high {
   color: #dc2626;
 }
-.urgency-critical {
+
+#ai-assistant-panel .urgency-critical {
   color: #7f1d1d;
   font-weight: 600;
 }
 
-/* ---------- SENTIMENT ---------- */
-
-.sentiment-positive {
+/* ---------- SENTIMENT (scoped) ---------- */
+#ai-assistant-panel .sentiment-positive {
   color: #059669;
 }
-.sentiment-neutral {
+
+#ai-assistant-panel .sentiment-neutral {
   color: #6b7280;
 }
-.sentiment-negative {
+
+#ai-assistant-panel .sentiment-negative {
   color: #dc2626;
 }
-.sentiment-frustrated {
+
+#ai-assistant-panel .sentiment-frustrated {
   color: #ea580c;
 }
 
-/* ---------- RESPONSIVE ---------- */
-
+/* ---------- RESPONSIVE (scoped) ---------- */
 @media (max-width: 1280px) {
-  #analysis-results > div {
+  #ai-assistant-panel #analysis-results > div {
     padding: 14px;
   }
 }
 
 /* ---------- PRINT ---------- */
-
 @media print {
   #ai-assistant-panel {
     display: none !important;

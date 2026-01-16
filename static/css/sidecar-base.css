@@ -1,0 +1,122 @@
+/* =========================================================
+   FutureHub Sidecar — Base (Isolation-Safe Foundation)
+   Purpose:
+   - Typography
+   - Design tokens (colors, spacing, radius)
+   - Scoped reset
+   - AidKit-like baseline feel
+   ========================================================= */
+
+/* -----------------------------
+   Root scope ONLY
+   ----------------------------- */
+#ai-assistant-panel {
+  /* ---------- Typography ---------- */
+  --fh-font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+
+  --fh-font-size-base: 14px;
+  --fh-line-height-base: 1.5;
+  --fh-letter-spacing: -0.01em;
+
+  /* ---------- Color tokens ---------- */
+  --fh-color-bg: #ffffff;
+  --fh-color-surface: #ffffff;
+
+  --fh-color-text: #111827;
+  --fh-color-text-secondary: #374151;
+  --fh-color-text-muted: #6b7280;
+
+  --fh-color-border: #e5e7eb;
+
+  --fh-color-primary: #2563eb;
+  --fh-color-success: #059669;
+  --fh-color-warning: #d97706;
+  --fh-color-danger: #dc2626;
+
+  /* ---------- Spacing (AidKit-like rhythm) ---------- */
+  --fh-space-2xs: 4px;
+  --fh-space-xs: 8px;
+  --fh-space-sm: 12px;
+  --fh-space-md: 16px;
+  --fh-space-lg: 24px;
+  --fh-space-xl: 32px;
+
+  /* ---------- Radius ---------- */
+  --fh-radius-sm: 6px;
+  --fh-radius-md: 10px;
+  --fh-radius-lg: 14px;
+  --fh-radius-pill: 100vw;
+
+  /* ---------- Weights ---------- */
+  --fh-weight-regular: 400;
+  --fh-weight-medium: 500;
+  --fh-weight-semibold: 600;
+  --fh-weight-bold: 700;
+
+  /* ---------- Base application ---------- */
+  font-family: var(--fh-font-sans);
+  font-size: var(--fh-font-size-base);
+  line-height: var(--fh-line-height-base);
+  letter-spacing: var(--fh-letter-spacing);
+  color: var(--fh-color-text);
+  background: var(--fh-color-bg);
+}
+
+/* -----------------------------
+   Scoped reset (NO GLOBALS)
+   ----------------------------- */
+#ai-assistant-panel,
+#ai-assistant-panel * {
+  box-sizing: border-box;
+}
+
+/* Font smoothing scoped to widget only */
+#ai-assistant-panel,
+#ai-assistant-panel * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* -----------------------------
+   Normalize common elements
+   (still scoped)
+   ----------------------------- */
+#ai-assistant-panel h1,
+#ai-assistant-panel h2,
+#ai-assistant-panel h3,
+#ai-assistant-panel h4,
+#ai-assistant-panel h5,
+#ai-assistant-panel h6,
+#ai-assistant-panel p,
+#ai-assistant-panel span,
+#ai-assistant-panel label,
+#ai-assistant-panel button,
+#ai-assistant-panel input,
+#ai-assistant-panel textarea,
+#ai-assistant-panel select {
+  font-family: var(--fh-font-sans);
+  letter-spacing: var(--fh-letter-spacing);
+  color: inherit;
+}
+
+/* Links – neutral by default, components decide styling */
+#ai-assistant-panel a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Prevent accidental inherited margins */
+#ai-assistant-panel p,
+#ai-assistant-panel ul,
+#ai-assistant-panel ol {
+  margin: 0;
+  padding: 0;
+}
+
+/* Lists should be explicitly styled by components */
+#ai-assistant-panel ul,
+#ai-assistant-panel ol {
+  list-style: none;
+}

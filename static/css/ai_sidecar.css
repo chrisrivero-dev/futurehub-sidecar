@@ -1068,3 +1068,37 @@ textarea:focus-visible {
     transform: rotate(360deg);
   }
 }
+/* Widget (embedded) mode */
+#ai-assistant-panel.sidecar-embedded {
+  width: 360px; /* typical Help Scout / Freshdesk */
+  max-width: 100%;
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+
+/* Full page mode (optional, dev only) */
+.sidecar-wrapper.sidecar-fullpage {
+  width: 100%;
+  min-height: 100vh;
+}
+.toast.hidden {
+  display: none !important;
+}
+.toast {
+  position: fixed;
+  bottom: var(--spacing-lg);
+  right: var(--spacing-lg);
+  z-index: 1000;
+  background: var(--color-text);
+  color: white;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* 🚨 prevents random black box */
+.toast:empty {
+  display: none !important;
+}
