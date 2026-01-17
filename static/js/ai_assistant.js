@@ -336,7 +336,7 @@ class AIAssistant {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            message: draft,
+            latest_message: draft,
             ai_generated: true,
             approval_granted: true,
           }),

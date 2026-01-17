@@ -184,8 +184,10 @@ class AISidecar {
       const category = item?.category ? String(item.category) : "";
       const content = item?.content ? String(item.content) : "";
 
+      // Recommended title is a TITLE, not an ID.
       const isRecommended =
-        this.recommendedCannedTitle && item?.id === this.recommendedCannedTitle;
+        this.recommendedCannedTitle &&
+        title === String(this.recommendedCannedTitle);
 
       const entry = document.createElement("button");
       entry.type = "button";
@@ -293,6 +295,7 @@ class AISidecar {
       }
     }
   }
+
   resolveRecommendedCannedTitle(primaryIntent) {
     if (!primaryIntent) return null;
 
@@ -308,9 +311,6 @@ class AISidecar {
   // Rendering
   // -----------------------------
   renderResponse(data) {
-    // ⭐ ADD THIS (TOP OF FUNCTION)
-    this.recommendedCannedTitle =
-      data?.intent_classification?.primary_intent || null;
     // Hide empty state
     if (this.emptyState) this.emptyState.classList.add("hidden");
 
@@ -342,8 +342,11 @@ class AISidecar {
     // 3. Intent Classification
     this.renderIntent(data ? data.intent_classification : null);
 
-    // 4. Draft Response
-    this.renderDraft(data ? data.draft : null);
+    // 4. Draft Response (THIS WAS BREAKING)
+    this.renderDraft(
+      data ? data.draft : null,
+      data ? data.agent_guidance : null
+    );
 
     // 5. Suggested Actions
     const suggested =
@@ -358,7 +361,6 @@ class AISidecar {
         ? data.intent_classification.primary_intent
         : null;
 
-    // ⭐ Resolve recommendation AFTER intent is known
     this.recommendedCannedTitle =
       this.resolveRecommendedCannedTitle(primaryIntent);
 
@@ -488,28 +490,50 @@ class AISidecar {
       actionsContainer.classList.add("hidden");
     }
   }
+
+  // ✅ FIXED: Must be named renderDraft (your code was rrenderDraft)
   renderDraft(draft, guidance) {
-    if (!draft) return;
+    console.log("RENDER DRAFT HIT", draft);
 
-    const textarea = document.getElementById("draft-text");
-    if (textarea) {
-      const text =
-        typeof draft.response_text === "string"
-          ? draft.response_text
-          : draft.response_text?.text ||
-            draft.response_text?.content ||
-            JSON.stringify(draft.response_text, null, 2);
-
-      textarea.value = text || "";
+    const textarea = this.draftTextarea;
+    if (!textarea) {
+      console.warn("renderDraft: textarea not found");
+      return;
     }
 
-    // ✅ AI draft usage + eligibility badge (UI only)
+    let text = "";
+
+    // ✅ Case 1: Normal expected shape
+    if (draft && typeof draft.response_text === "string") {
+      text = draft.response_text;
+
+      // ✅ Case 2: Nested response_text object (YOUR BUG)
+    } else if (
+      draft &&
+      typeof draft.response_text === "object" &&
+      typeof draft.response_text.response_text === "string"
+    ) {
+      text = draft.response_text.response_text;
+
+      // ✅ Case 3: Backend accidentally sent full draft object
+    } else if (draft && typeof draft.response_text === "object") {
+      console.warn("Flattening unexpected draft shape", draft);
+      text = JSON.stringify(draft.response_text, null, 2);
+    } else {
+      console.warn("Unusable draft payload", draft);
+      textarea.value = "";
+      return;
+    }
+
+    textarea.value = text;
+
+    // Badge (UI only)
     const sourceBadge = document.getElementById("draft-source-badge");
-    if (sourceBadge) {
-      if (guidance?.auto_send_eligible) {
+    if (sourceBadge && guidance) {
+      if (guidance.auto_send_eligible) {
         sourceBadge.textContent = "AI Draft · Auto-Send Ready";
         sourceBadge.className = "badge badge-success";
-      } else if (guidance?.requires_review) {
+      } else if (guidance.requires_review) {
         sourceBadge.textContent = "AI Draft · Review Required";
         sourceBadge.className = "badge badge-warning";
       } else {
@@ -559,6 +583,7 @@ class AISidecar {
       '<p class="help-text">No conversation history in this request</p>';
   }
 
+  // ✅ Must exist, because init() calls it
   initCollapsibles() {
     const toggles = document.querySelectorAll(".section-toggle");
     toggles.forEach((toggle) => {
@@ -587,6 +612,8 @@ class AISidecar {
 
     if (this.cannedMenu) this.cannedMenu.classList.add("hidden");
     if (this.cannedBtn) this.cannedBtn.setAttribute("aria-expanded", "false");
+
+    if (this.draftTextarea) this.draftTextarea.value = "";
 
     this.showToast("Form cleared");
   }
