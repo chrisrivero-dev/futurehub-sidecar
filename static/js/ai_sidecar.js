@@ -180,27 +180,25 @@ class AISidecar {
     for (let i = 0; i < this.cannedResponses.length; i++) {
       const item = this.cannedResponses[i];
 
-      const title = item && item.title ? String(item.title) : "Untitled";
-      const category = item && item.category ? String(item.category) : "";
-      const content = item && item.content ? String(item.content) : "";
+      const title = item?.title ? String(item.title) : "Untitled";
+      const category = item?.category ? String(item.category) : "";
+      const content = item?.content ? String(item.content) : "";
 
       const isRecommended =
-        this.recommendedCannedTitle &&
-        (title === this.recommendedCannedTitle ||
-          title
-            .toLowerCase()
-            .includes(this.recommendedCannedTitle.toLowerCase().split(" ")[0]));
+        this.recommendedCannedTitle && item?.id === this.recommendedCannedTitle;
 
-      // ✅ DECLARE FIRST
       const entry = document.createElement("button");
       entry.type = "button";
       entry.className = `canned-item${isRecommended ? " recommended" : ""}`;
       entry.setAttribute("role", "menuitem");
-      entry.dataset.cannedId = item && item.id ? String(item.id) : title;
+      entry.dataset.cannedId = item?.id || title;
 
       const preview = content.slice(0, 120) + (content.length > 120 ? "…" : "");
+
       entry.innerHTML = `
-      <div class="canned-title">${title}</div>
+      <div class="canned-title">
+        ${isRecommended ? "★ " : ""}${title}
+      </div>
       <div class="canned-meta">${category}</div>
       <div class="canned-preview">${preview}</div>
     `;
@@ -310,6 +308,9 @@ class AISidecar {
   // Rendering
   // -----------------------------
   renderResponse(data) {
+    // ⭐ ADD THIS (TOP OF FUNCTION)
+    this.recommendedCannedTitle =
+      data?.intent_classification?.primary_intent || null;
     // Hide empty state
     if (this.emptyState) this.emptyState.classList.add("hidden");
 
@@ -487,20 +488,34 @@ class AISidecar {
       actionsContainer.classList.add("hidden");
     }
   }
-
-  renderDraft(draft) {
+  renderDraft(draft, guidance) {
     if (!draft) return;
-
-    const typeBadge = document.getElementById("draft-type-badge");
-    if (typeBadge) {
-      const t = (draft.type || "draft").toLowerCase();
-      typeBadge.textContent = t.toUpperCase();
-      typeBadge.className = `badge draft-${t}`;
-    }
 
     const textarea = document.getElementById("draft-text");
     if (textarea) {
-      textarea.value = draft.response_text || "";
+      const text =
+        typeof draft.response_text === "string"
+          ? draft.response_text
+          : draft.response_text?.text ||
+            draft.response_text?.content ||
+            JSON.stringify(draft.response_text, null, 2);
+
+      textarea.value = text || "";
+    }
+
+    // ✅ AI draft usage + eligibility badge (UI only)
+    const sourceBadge = document.getElementById("draft-source-badge");
+    if (sourceBadge) {
+      if (guidance?.auto_send_eligible) {
+        sourceBadge.textContent = "AI Draft · Auto-Send Ready";
+        sourceBadge.className = "badge badge-success";
+      } else if (guidance?.requires_review) {
+        sourceBadge.textContent = "AI Draft · Review Required";
+        sourceBadge.className = "badge badge-warning";
+      } else {
+        sourceBadge.textContent = "AI Draft";
+        sourceBadge.className = "badge badge-neutral";
+      }
     }
   }
 

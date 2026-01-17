@@ -160,6 +160,12 @@
                   <span id="ambiguity-status" class="metric-badge"></span>
                 </div>
               </div>
+              <div class="metric-explainer">
+                <p><strong>Confidence</strong> — How certain the AI is that this response matches the customer’s intent.</p>
+                <p><strong>Safety</strong> — Whether the response is safe to send without policy or risk concerns.</p>
+                <p><strong>Ambiguity</strong> — Indicates unclear or incomplete customer information.</p>
+              </div>
+
             </section>
 
             <!-- 3. Intent Classification -->
@@ -176,24 +182,19 @@
                 </div>
               </div>
             </section>
-
             <!-- 4. Draft Response -->
             <section class="section-card">
               <div class="section-header">
                 <h2 class="section-title">Draft Response</h2>
               </div>
-              <textarea
-                id="draft-text"
-                class="draft-textarea"
-                rows="8"
-              ></textarea>
-              <button
-                id="insert-draft-btn"
-                class="btn-secondary btn-block btn-sm"
-              >
+            
+              <textarea id="draft-text" class="draft-textarea" rows="8"></textarea>
+            
+              <button id="insert-draft-btn" class="btn-secondary btn-block btn-sm">
                 Insert into Reply
               </button>
             </section>
+
 
             <!-- 5. Suggested Actions -->
             <section class="section-card">

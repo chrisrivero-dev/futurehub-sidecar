@@ -1315,3 +1315,21 @@ button[aria-expanded="true"] .dropdown-caret {
   border-left: 3px solid #2563eb;
   background: #eff6ff;
 }
+.metric-explainer {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 8px;
+}
+
+.auto-send-status {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.auto-send-status.success {
+  color: #059669;
+}
+
+.auto-send-status.warning {
+  color: #d97706;
+}
