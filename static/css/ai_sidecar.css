@@ -65,11 +65,19 @@ body {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-
   padding: var(--spacing-lg);
-  margin: var(--spacing-lg);
-
+  margin: 0 var(--spacing-lg) var(--spacing-md) var(--spacing-lg);
   box-shadow: var(--shadow-card);
+  overflow: visible; /* allow dropdowns */
+  transition: box-shadow 0.15s ease;
+}
+
+.section-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.section-card:last-child {
+  margin-bottom: var(--spacing-lg);
 }
 
 .section-card:hover {
@@ -78,16 +86,6 @@ body {
 /* ===============================
    Sidecar Header — SINGLE SOURCE OF TRUTH
    =============================== */
-
-.sidecar-header {
-  background: #f3f4f6;
-  border-bottom: 1px solid #e5e7eb;
-
-  padding: var(--spacing-lg);
-  border-radius: var(--radius-lg);
-
-  box-shadow: var(--shadow-card);
-}
 
 .sidecar-header .header-content {
   display: flex;
@@ -140,13 +138,12 @@ body {
   flex-direction: column;
   align-items: center; /* centers Subject + Customer Name */
   text-align: left; /* text inside stays readable */
+  margin-bottom: var(--spacing-md);
 }
-/* ===== Form Group Layout (Center Inputs) ===== */
-.form-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center; /* ← THIS is what centers the fields */
-  text-align: left;
+
+/* Remove extra space at the very end */
+.form-group:last-child {
+  margin-bottom: 0;
 }
 
 /* ===== Forms - Larger, More Confident ===== */
@@ -296,13 +293,13 @@ body {
   color: #991b1b;
   font-weight: var(--weight-bold);
 }
+guidance-card {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe; /* Explicit full border */
+  border-left: 4px solid var(--color-primary); /* Left accent on TOP of border */
+}
 
 /* ===== Guidance Card - Emphasize Importance ===== */
-.guidance-card {
-  border-left: 4px solid var(--color-primary);
-  background: #eff6ff;
-  border-color: #bfdbfe;
-}
 
 .guidance-content {
   display: flex;
@@ -326,51 +323,63 @@ body {
   color: var(--color-text-secondary);
 }
 
-/* ===== Metrics - Bigger Numbers ===== */
+/* ===== Metrics — FINAL, CORRECT STRUCTURE ===== */
+
 .metrics-stack {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
 }
 
+/* Each metric row is a contained surface */
 .metric-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) 0;
-  border-bottom: 2px solid var(--color-border);
+
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  background: #f9fafb;
 }
 
-.metric-row:last-child {
-  border-bottom: none;
-}
-
-.metric-label {
-  font-size: var(--font-size-base);
-  font-weight: var(--weight-semibold);
-  color: var(--color-text);
-}
-
+/* Left side: label + value stacked */
 .metric-value {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
+  flex-direction: column;
+  gap: 2px;
 }
 
+/* Label is a label, not a headline */
+.metric-label {
+  font-size: 12px;
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Value is the hero */
 .metric-number {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: var(--weight-bold);
   color: var(--color-text);
   line-height: 1;
+  margin-top: 2px; /* visual centering vs badge */
 }
 
+/* Badge lives INSIDE the row, always */
 .metric-badge {
-  padding: 6px 12px;
+  align-self: center;
+  padding: 4px 10px; /* reduced from 6px 12px */
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12px; /* down from 13px */
   font-weight: var(--weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.metric-value {
+  align-items: center;
 }
 
 /* Confidence badges */
@@ -656,7 +665,7 @@ body {
 
 @media (max-width: 480px) {
   .sidecar-content {
-    padding: var(--spacing-sm);
+    padding: 0;
   }
 
   .section-card {
@@ -1015,15 +1024,6 @@ body {
    8. CONFIDENCE METRICS - Clear Visual Weight
    ============================================ */
 
-/* Confidence percentage - hero number */
-.metric-number {
-  font-size: 28px;
-  font-weight: var(--weight-bold);
-  color: var(--color-text);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Metric badges - stronger color coding */
 .metric-badge {
   font-size: 12px;
@@ -1155,6 +1155,10 @@ textarea:focus-visible {
   -webkit-overflow-scrolling: touch;
   padding-bottom: 24px;
 }
+/* Header track should NOT add extra padding */
+.sidecar-header {
+  padding: calc(var(--spacing-lg) - 4px) var(--spacing-lg);
+}
 
 /* Full page mode (optional, dev only) */
 .sidecar-wrapper.sidecar-fullpage {
@@ -1172,7 +1176,7 @@ textarea:focus-visible {
   background: var(--color-text);
   color: white;
   padding: var(--spacing-md) var(--spacing-lg);
-  border-r.sidecar-headeradius: var(--radius-md);
+  border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
@@ -1389,10 +1393,6 @@ button[aria-expanded="true"] .dropdown-caret {
   font-weight: 700;
 }
 
-.canned-item.recommended {
-  border-left: 3px solid #2563eb;
-  background: #eff6ff;
-}
 .metric-explainer {
   font-size: 12px;
   color: #6b7280;
@@ -1433,23 +1433,75 @@ button[aria-expanded="true"] .dropdown-caret {
    =============================== */
 
 .sidecar-header {
-  background: #f3f4f6;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-
-  padding: var(--spacing-lg);
-  margin: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
-
-  box-shadow: var(--shadow-card);
-
+  background: #f8fafc;
+  border: 1px solid var(--color-border); /* SAME as .section-card */
+  border-radius: var(--radius-lg); /* SAME as .section-card */
+  padding: var(--spacing-lg); /* SAME as .section-card */
+  margin: 0 var(--spacing-lg) var(--spacing-md) var(--spacing-lg);
+  box-shadow: var(--shadow-card); /* SAME as .section-card */
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
+
 .header-content {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.header-logo {
+  height: 28px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.header-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.sidecar-header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.01em;
+}
+.sidecar-header .btn-icon,
+#reset-btn {
+  width: 28px; /* Was 32px → now ~12% smaller */
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sidecar-header .btn-icon:hover,
+#reset-btn:hover {
+  background: #e5e7eb;
+  color: var(--color-text);
+}
+
+.sidecar-header .btn-icon .icon,
+#reset-btn .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.header-version {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
 }
 
 .header-logo {
@@ -1476,12 +1528,18 @@ button[aria-expanded="true"] .dropdown-caret {
   font-weight: 600;
   color: #6b7280;
 }
-.btn-icon {
-  width: 32px;
-  height: 32px;
-  font-size: 16px;
 
-  margin-left: auto;
-
-  border-radius: 8px;
+.sidecar-header-track {
+  overflow: visible;
+  flex: 0 0 auto;
+}
+#ai-assistant-panel.sidecar-embedded {
+  border-left: 1px solid var(--color-border);
+}
+/* Confidence badge — normalize size with SAFE / NONE */
+.metric-badge.confidence-very_low {
+  padding: 6px 12px; /* EXACT match */
+  font-size: 12px; /* EXACT match */
+  border-width: 0.5px; /* reduce from 2px */
+  line-height: 1;
 }
