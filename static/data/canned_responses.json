@@ -1,0 +1,75 @@
+[
+  {
+    "id": "1",
+    "title": "Firmware Update Instructions",
+    "category": "Firmware",
+    "content": "You can update Apollo II firmware directly from the dashboard.\n\nGo to Dashboard → Settings → Firmware, upload the latest firmware file, and allow the process to complete. The unit will reboot automatically when finished.\n\nIf you are asking about flashing storage media instead, let me know before proceeding."
+  },
+  {
+    "id": "2",
+    "title": "Node Sync Behavior (What’s Normal)",
+    "category": "Node",
+    "content": "During initial setup, node sync can take a significant amount of time and this is expected.\n\nPlease make sure your internet connection is stable, allow the unit to remain powered on, and avoid repeated reboots during sync.\n\nIf the sync appears stalled, a screenshot of the node status page will help confirm what’s happening."
+  },
+  {
+    "id": "3",
+    "title": "Warranty Claim Information",
+    "category": "Warranty",
+    "content": "To review warranty options, please provide:\n• Your order number\n• A brief description of the issue\n• Photos or screenshots showing the problem\n• Current firmware version (if accessible)\n\nOnce we have this information, we can advise on next steps."
+  },
+  {
+    "id": "4",
+    "title": "Shipping Status / Delays",
+    "category": "Shipping",
+    "content": "Orders are built and shipped in batches, so estimated timelines can shift.\n\nIf you’d like me to check the latest status, please share your order number and I can review what information is available."
+  },
+  {
+    "id": "5",
+    "title": "Request for More Information",
+    "category": "Support",
+    "content": "To help troubleshoot this accurately, please share:\n• Your product model\n• Current firmware version\n• A brief description of what you’re seeing\n• A screenshot or photo, if available\n\nWith that information, I can guide next steps."
+  },
+  {
+    "id": "6",
+    "title": "Warranty Eligibility Review",
+    "category": "Warranty",
+    "content": "If you believe this may be a hardware issue, we can review warranty eligibility.\n\nPlease provide your order number, photos of the issue, and a short description of what’s happening so we can assess the situation."
+  },
+  {
+    "id": "7",
+    "title": "Low or Zero Hashrate",
+    "category": "Troubleshooting",
+    "content": "If your Apollo II is still syncing, mining may appear stalled or show low or zero hashrate. This is expected behavior during initial sync.\n\nMining will not behave normally until the node is fully synced. What sync percentage does the dashboard currently show?"
+  },
+  {
+    "id": "8",
+    "title": "Dashboard / Network Access Issues",
+    "category": "Connectivity",
+    "content": "If apollo.local isn’t loading, try accessing the unit using its local IP address instead.\n\nMake sure the miner and your device are on the same network, and restart the miner and router if needed.\n\nTools like Angry IP Scanner can help locate the unit on your local network."
+  },
+  {
+    "id": "9",
+    "title": "Payment Verification",
+    "category": "Orders",
+    "content": "To verify payment details, please provide:\n• Your order number\n• Payment method used\n• Transaction ID, if available\n\nOnce confirmed, we can review order status."
+  },
+  {
+    "id": "10",
+    "title": "Refund / Return Inquiry",
+    "category": "Orders",
+    "content": "Refund and return eligibility depends on order status and delivery timing.\n\nPlease share your order number so we can review available options."
+  },
+  {
+    "id": "11",
+    "title": "Mining Pool Configuration",
+    "category": "Setup",
+    "content": "To configure pool mining on Apollo II:\n1. Open Dashboard → Settings → Miner\n2. Select Pool mode\n3. Enter your pool’s stratum URL and worker name\n4. Save settings and restart the miner\n\nMost pools begin reporting hashrate within 10–15 minutes after connecting."
+  },
+  {
+    "id": "12",
+    "title": "Solo Mining Overview",
+    "category": "Education",
+    "content": "Solo mining connects Apollo II directly to the Bitcoin network.\n\nBlock discovery is statistically rare, but a successful solo miner receives the full block reward.\n\nFor best results:\n• Keep the node fully synced\n• Leave the unit online continuously\n• Avoid unnecessary reboots"
+  }
+]
+
