@@ -8,7 +8,7 @@ from datetime import datetime
 import time
 
 from intent_classifier import detect_intent
-from draft_generator import generate_draft
+from ai.draft_generator import generate_draft
 from flask import redirect
 from routes.sidecar_ui import sidecar_ui_bp
 
@@ -41,6 +41,14 @@ def draft():
         return error_response(
             code="malformed_json",
             message="Request body must be valid JSON",
+            status=400,
+        )
+    # 🔥 HARD CONTRACT ENFORCEMENT
+    if "message" in data:
+        return error_response(
+            code="invalid_input",
+            message="Field 'message' is not supported. Use 'latest_message' only.",
+            details={"invalid_field": "message"},
             status=400,
         )
 
@@ -214,17 +222,22 @@ def draft():
     ]
     last_ai_draft = agent_history[-1] if agent_history else None
 
-    mode = "explanatory" if intent == "shipping_status" else "diagnostic"
-
+    # -------------------------------------------------
+    # PHASE 1.1 LOCKED
+    # Do NOT pass `mode` or legacy `message` here.
+    # Draft behavior is derived inside generate_draft().
+    # -------------------------------------------------
     # ----------------------------
     # Draft (AI generator) -> RETURNS STRING
     # ----------------------------
     draft_text = generate_draft(
-        message=latest_message,
-        mode=mode,
+        latest_message=latest_message,
+        intent=intent,
         prior_draft=last_ai_draft,
         prior_agent_messages=agent_history,
     )
+
+
 
     # Normalize into the shape the rest of this file expects
     draft_result = {
