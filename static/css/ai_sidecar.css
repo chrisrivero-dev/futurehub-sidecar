@@ -1307,7 +1307,7 @@ button[aria-expanded="true"] .dropdown-caret {
 
 .canned-item.recommended .canned-title::before {
   content: "★ ";
-  color: #2563eb;          /* blue star */
+  color: #2563eb; /* blue star */
   font-weight: 700;
 }
 
