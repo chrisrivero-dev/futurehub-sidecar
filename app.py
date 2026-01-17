@@ -11,6 +11,8 @@ from intent_classifier import detect_intent
 from ai.draft_generator import generate_draft
 from flask import redirect
 from routes.sidecar_ui import sidecar_ui_bp
+from ai.missing_info_detector import detect_missing_information
+
 
 
 app = Flask(__name__)
@@ -317,6 +319,37 @@ def draft():
             "suggested_actions": build_suggested_actions(classification),
         },
     }
+
+    # -------------------------------------------------
+    # Phase 2.1a — Missing Information (Observation Only)
+    # -------------------------------------------------
+    missing_information = detect_missing_information(
+        messages=last_customer_messages,
+        intent={
+            "primary": classification["primary_intent"],
+            "confidence": confidence_overall,
+        },
+        mode=mode,
+        metadata=classification_metadata,
+    )
+
+    response["missing_information"] = missing_information
+
+    logger.info(
+        "missing_information_observed",
+        extra={
+            "primary_intent": classification["primary_intent"],
+            "intent_confidence": confidence_overall,
+            "mode": mode,
+            "blocking_count": missing_information.get("summary", {}).get("blocking_count", 0),
+            "missing_keys": [
+                item["key"] for item in missing_information.get("items", [])
+            ],
+        },
+    )
+
+    return jsonify(response)
+
 
     if canned_response_suggestion:
         response["agent_guidance"]["canned_response_suggestion"] = canned_response_suggestion

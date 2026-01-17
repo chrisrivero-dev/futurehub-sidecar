@@ -264,39 +264,66 @@ def generate_draft(
         intent=intent,
         mode=mode,
     )
-    
+    # ----------------------------
+    # Confidence (from classifier) — safe fallback
+    # ----------------------------
+    confidence = kwargs.get("confidence", {})
     intent_confidence = (
         confidence.get("intent_confidence", 0.0)
         if isinstance(confidence, dict)
         else 0.0
     )
 
-# -------------------------------------------------
-# PHASE 1.7 — confidence-aware knowledge injection (LOCKED)
-# -------------------------------------------------
-if (
-    intent in ALLOWED_KNOWLEDGE_INTENTS
-    and mode in ALLOWED_KNOWLEDGE_MODES
-    and intent_confidence >= MIN_KNOWLEDGE_CONFIDENCE
-):
-    faq_snippets = load_faq_snippets(intent)
+    # -------------------------------------------------
+    # PHASE 1.7 — confidence-aware knowledge injection (LOCKED)
+    # -------------------------------------------------
+    if (
+        intent is not None
+        and intent in ALLOWED_KNOWLEDGE_INTENTS
+        and mode in ALLOWED_KNOWLEDGE_MODES
+        and intent_confidence >= MIN_KNOWLEDGE_CONFIDENCE
+    ):
+        faq_snippets = load_faq_snippets(intent)
 
-    if faq_snippets:
-        block = "\n\n".join(f"- {s}" for s in faq_snippets)
-        block = block[:MAX_KNOWLEDGE_CHARS]
+        if faq_snippets:
+            block = "\n\n".join(f"- {s}" for s in faq_snippets)
+            block = block[:MAX_KNOWLEDGE_CHARS]
 
-        knowledge_block = (
-            "Here’s some helpful information that may be useful:\n\n"
-            + block
-        )
+            knowledge_block = (
+                "Here’s some helpful information that may be useful:\n\n"
+                + block
+            )
 
-        if intent in KNOWLEDGE_PREPEND_INTENTS:
-            draft_text = knowledge_block + "\n\n" + draft_text
-        else:
-            draft_text = draft_text + "\n\n" + knowledge_block
+            if intent in KNOWLEDGE_PREPEND_INTENTS:
+                draft_text = knowledge_block + "\n\n" + draft_text
+            else:
+                draft_text = draft_text + "\n\n" + knowledge_block
 
 
+    # -------------------------------------------------
+    # PHASE 1.7 — confidence-aware knowledge injection (LOCKED)
+    # -------------------------------------------------
+    if (
+        intent is not None
+        and intent in ALLOWED_KNOWLEDGE_INTENTS
+        and mode in ALLOWED_KNOWLEDGE_MODES
+        and intent_confidence >= MIN_KNOWLEDGE_CONFIDENCE
+    ):
+        faq_snippets = load_faq_snippets(intent)
 
+        if faq_snippets:
+            block = "\n\n".join(f"- {s}" for s in faq_snippets)
+            block = block[:MAX_KNOWLEDGE_CHARS]
+
+            knowledge_block = (
+                "Here’s some helpful information that may be useful:\n\n"
+                + block
+            )
+
+            if intent in KNOWLEDGE_PREPEND_INTENTS:
+                draft_text = knowledge_block + "\n\n" + draft_text
+            else:
+                draft_text = draft_text + "\n\n" + knowledge_block
 
     # ----------------------------
     # POST-GENERATION CONSTRAINTS

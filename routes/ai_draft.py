@@ -357,12 +357,64 @@ def classify_intent(subject, latest_message, conversation_history):
     def _norm(s):
         return (s or "").strip().lower()
 
-    # Combine all relevant text
+          # Combine all relevant text
     parts = [_norm(subject), _norm(latest_message)]
     for msg in (conversation_history or []):
         if isinstance(msg, dict) and isinstance(msg.get("text"), str):
             parts.append(_norm(msg["text"]))
+
     text = " ".join([p for p in parts if p])
+
+  
+    # PHASE 1.2 — intent signal normalization (LOCKED)
+    text = (
+        text
+        .replace("’", "'")
+        .replace("doesn’t", "doesn't")
+        .replace("won’t", "won't")
+        .replace("can’t", "can't")
+    )
+
+
+    # -------------------------------------------------
+    # PHASE 1.2 — setup_help hard detection (LOCKED)
+    # -------------------------------------------------
+    setup_help_phrases = [
+        "apollo.local",
+        "futurebit.local",
+        "doesn't load",
+        "doesnt load",
+        "won't load",
+        "wont load",
+        "can't access",
+        "cannot access",
+        "dashboard won't load",
+        "dashboard doesnt load",
+        "dashboard doesn't load",
+    ]
+
+    if any(phrase in text for phrase in setup_help_phrases):
+        return {
+            "primary_intent": "setup_help",
+            "secondary_intents": [],
+            "confidence": {
+                "intent_confidence": 0.90,
+                "ambiguity_detected": False,
+            },
+            "tone_modifier": "neutral",
+            "safety_mode": "safe",
+            "device_behavior_detected": False,
+            "attempted_actions": [],
+            "scores": {
+                "setup_help": 5,
+                "shipping_status": 0,
+                "not_hashing": 0,
+                "sync_delay": 0,
+                "general_question": 0,
+            },
+        }
+
+
 
     # Keyword buckets
     shipping_kw = {
