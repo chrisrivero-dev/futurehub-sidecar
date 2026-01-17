@@ -15,6 +15,12 @@
   --color-text: #111827;
   --color-text-secondary: #374151;
   --color-text-muted: #6b7280;
+  /* ===== Typography: Inter (Primary UI Font) ===== */
+  #ai-assistant-panel,
+  #ai-assistant-panel * {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      Helvetica, Arial, sans-serif;
+  }
 
   /* Typography - Larger, bolder scale */
   --font-size-base: 14px;
@@ -54,19 +60,53 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ===== Section Cards - More Prominent ===== */
+/* ===== Section Cards — Unified Stack (Embedded Sidecar) ===== */
 .section-card {
   background: var(--color-surface);
-  border: 2px solid var(--color-border);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+
   padding: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
+  margin: var(--spacing-lg);
+
   box-shadow: var(--shadow-card);
-  transition: box-shadow 0.2s;
 }
 
 .section-card:hover {
   box-shadow: var(--shadow-card-hover);
+}
+/* ===============================
+   Sidecar Header — SINGLE SOURCE OF TRUTH
+   =============================== */
+
+.sidecar-header {
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-lg);
+
+  box-shadow: var(--shadow-card);
+}
+
+.sidecar-header .header-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidecar-header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827; /* BLACK */
+  letter-spacing: -0.01em;
+}
+
+.sidecar-header .header-version {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
 }
 
 /* ===== Section Headers - Bold & Unmistakable ===== */
@@ -90,26 +130,23 @@ body {
 .section-header .section-title {
   margin-bottom: 0;
 }
+/* ===============================
+   Sidecar Header — AidKit-style
+   =============================== */
 
-/* ===== Header ===== */
-.sidecar-header {
-  background: var(--color-text);
-  border-bottom: none;
-  padding: var(--spacing-md) var(--spacing-lg);
+/* ===== Form Group Layout (Center Inputs, Keep Text Readable) ===== */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* centers Subject + Customer Name */
+  text-align: left; /* text inside stays readable */
 }
-
-.header-content h1 {
-  font-size: var(--font-size-lg);
-  font-weight: var(--weight-bold);
-  color: white;
-  letter-spacing: -0.01em;
-}
-
-.header-version {
-  font-size: var(--font-size-xs);
-  color: rgba(255, 255, 255, 0.6);
-  margin-left: var(--spacing-xs);
-  font-weight: var(--weight-medium);
+/* ===== Form Group Layout (Center Inputs) ===== */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* ← THIS is what centers the fields */
+  text-align: left;
 }
 
 /* ===== Forms - Larger, More Confident ===== */
@@ -119,6 +156,12 @@ body {
   color: var(--color-text);
   margin-bottom: var(--spacing-xs);
   display: block;
+}
+/* Center single-line inputs without stretching full width */
+.form-group input[type="text"],
+.form-group input[type="email"] {
+  width: 100%;
+  max-width: 260px;
 }
 
 .form-group input,
@@ -177,26 +220,34 @@ body {
   justify-content: center;
 }
 
-/* ===== Draft Response - Make it Hero ===== */
+/* ===== Draft Response Textarea (CANONICAL) ===== */
 .draft-textarea {
   width: 100%;
-  padding: 16px;
+  max-width: 100%;
+  box-sizing: border-box;
+
+  min-height: 160px;
+  max-height: 280px;
+
+  resize: vertical;
+
+  margin: 0; /* prevent horizontal drift */
+  padding: 12px 14px;
+
   border: 2px solid var(--color-border);
   border-radius: var(--radius-md);
-  font-size: 15px;
+
   font-family: inherit;
-  line-height: 1.7;
-  resize: vertical;
-  margin-bottom: var(--spacing-md);
-  min-height: 240px;
-  background: white;
-  transition: all 0.2s;
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+
+  background: #f0f9ff; /* subtle blue like AidKit */
 }
 
 .draft-textarea:focus {
-  border-color: var(--color-primary);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 /* ===== Badges - Larger & Clearer ===== */
@@ -603,7 +654,6 @@ body {
   background: var(--color-danger);
 }
 
-/* ===== Responsive Tweaks ===== */
 @media (max-width: 480px) {
   .sidecar-content {
     padding: var(--spacing-sm);
@@ -612,6 +662,11 @@ body {
   .section-card {
     padding: var(--spacing-md);
     margin-bottom: var(--spacing-md);
+  }
+
+  /* Keep header aligned with cards on mobile */
+  .sidecar-header {
+    padding: var(--spacing-md);
   }
 
   .section-title {
@@ -641,16 +696,6 @@ body {
 /* ============================================
    1. CANNED RESPONSES - Substantial Content Blocks
    ============================================ */
-
-/* Make canned response section feel more important */
-#canned-response-container {
-  padding: var(--spacing-md);
-  background: linear-gradient(to bottom, #fefce8 0%, #ffffff 100%);
-  border: 2px solid #fde047;
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--spacing-md);
-}
-
 /* Canned response button - Make it feel like a substantial content preview */
 #canned-response-btn {
   width: 100%;
@@ -820,20 +865,6 @@ body {
    4. DRAFT AREA - Subtle AI Content Distinction
    ============================================ */
 
-/* Light visual treatment to indicate AI-generated content */
-.draft-textarea {
-  background: linear-gradient(to bottom, #f0f9ff 0%, #ffffff 100%);
-  border: 2px solid #bfdbfe;
-  font-size: 15px;
-  line-height: 1.75;
-  color: var(--color-text);
-}
-
-.draft-textarea:focus {
-  background: white;
-  border-color: var(--color-primary);
-}
-
 /* Draft type badge - positioned more prominently */
 #draft-type-badge {
   font-size: 12px;
@@ -892,6 +923,14 @@ body {
 /* ============================================
    6. GENERAL HIERARCHY REFINEMENTS
    ============================================ */
+/* Re-unify card stack spacing */
+.sidecar-content > .section-card {
+  margin-bottom: var(--spacing-md);
+}
+
+.sidecar-content > .section-card:last-child {
+  margin-bottom: 0;
+}
 
 /* Strengthen visual separation between major sections */
 .section-card + .section-card {
@@ -905,6 +944,12 @@ body {
   color: var(--color-text);
   margin-bottom: var(--spacing-md);
   line-height: 1.3;
+}
+/* Enforce consistent heading weight across all cards */
+.section-card h2,
+.section-card h3 {
+  font-weight: var(--weight-bold);
+  color: var(--color-text);
 }
 
 /* Subsection labels (like "Primary Intent") */
@@ -1068,14 +1113,47 @@ textarea:focus-visible {
     transform: rotate(360deg);
   }
 }
-/* Widget (embedded) mode */
+/* ===============================
+   Widget (embedded) mode — CLEAN
+   =============================== */
+/* ===============================
+   Widget (embedded) mode — FINAL
+   =============================== */
+
 #ai-assistant-panel.sidecar-embedded {
-  width: 360px; /* typical Help Scout / Freshdesk */
+  width: 360px; /* Help Scout / Freshdesk width */
   max-width: 100%;
-  height: 100vh;
-  overflow-y: auto;
+  height: 100vh; /* Anchor the widget */
+  display: flex; /* REQUIRED for internal scroll */
+  flex-direction: column;
   background: var(--color-surface);
   border-left: 1px solid var(--color-border);
+}
+
+/* Structural container */
+.sidecar-container {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Main scroll area */
+.sidecar-content {
+  padding: var(--spacing-md);
+}
+
+/* Inner container holds the scroll */
+.sidecar-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* THIS is where scrolling belongs */
+.sidecar-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
 }
 
 /* Full page mode (optional, dev only) */
@@ -1094,7 +1172,7 @@ textarea:focus-visible {
   background: var(--color-text);
   color: white;
   padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--radius-md);
+  border-r.sidecar-headeradius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
@@ -1119,7 +1197,7 @@ textarea:focus-visible {
   border: 1px solid var(--fh-color-border);
   border-radius: var(--fh-radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  max-height: 280px;
+  max-height: 70vh;
   overflow-y: auto;
   z-index: 20;
 }
@@ -1286,7 +1364,7 @@ button[aria-expanded="true"] .dropdown-caret {
   margin-top: 4px;
   line-height: 1.4;
   max-height: 2.8em; /* ~2 lines */
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 /* ⭐ Recommended (advisory only) */
@@ -1332,4 +1410,78 @@ button[aria-expanded="true"] .dropdown-caret {
 
 .auto-send-status.warning {
   color: #d97706;
+}
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-logo {
+  height: 28px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.header-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+/* ===============================
+   Sidecar Header — MATCH SECTION CARDS
+   =============================== */
+
+.sidecar-header {
+  background: #f3f4f6;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+
+  padding: var(--spacing-lg);
+  margin: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+
+  box-shadow: var(--shadow-card);
+
+  display: flex;
+  align-items: center;
+}
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-logo {
+  height: 28px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.header-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.sidecar-header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.header-version {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+
+  margin-left: auto;
+
+  border-radius: 8px;
 }

@@ -1,5 +1,5 @@
 <!-- templates/ai_sidecar.html -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -17,9 +17,17 @@
         <!-- Header -->
         <header class="sidecar-header">
           <div class="header-content">
-            <h1>FutureHub Sidecar</h1>
-            <span class="header-version">v1.0</span>
+            <img
+              src="{{ url_for('static', filename='img/futurehub_logo_dark.png') }}"
+              alt="FutureHub"
+              class="header-logo"
+            />
+            <div class="header-text">
+              <h1>FH AI Assistant</h1>
+              <span class="header-version">v1.0</span>
+            </div>
           </div>
+
           <button id="reset-btn" class="btn-icon" title="Reset">
             <svg
               class="icon"
@@ -161,11 +169,19 @@
                 </div>
               </div>
               <div class="metric-explainer">
-                <p><strong>Confidence</strong> — How certain the AI is that this response matches the customer’s intent.</p>
-                <p><strong>Safety</strong> — Whether the response is safe to send without policy or risk concerns.</p>
-                <p><strong>Ambiguity</strong> — Indicates unclear or incomplete customer information.</p>
+                <p>
+                  <strong>Confidence</strong> — How certain the AI is that this
+                  response matches the customer’s intent.
+                </p>
+                <p>
+                  <strong>Safety</strong> — Whether the response is safe to send
+                  without policy or risk concerns.
+                </p>
+                <p>
+                  <strong>Ambiguity</strong> — Indicates unclear or incomplete
+                  customer information.
+                </p>
               </div>
-
             </section>
 
             <!-- 3. Intent Classification -->
@@ -187,14 +203,20 @@
               <div class="section-header">
                 <h2 class="section-title">Draft Response</h2>
               </div>
-            
-              <textarea id="draft-text" class="draft-textarea" rows="8"></textarea>
-            
-              <button id="insert-draft-btn" class="btn-secondary btn-block btn-sm">
+
+              <textarea
+                id="draft-text"
+                class="draft-textarea"
+                rows="8"
+              ></textarea>
+
+              <button
+                id="insert-draft-btn"
+                class="btn-secondary btn-block btn-sm"
+              >
                 Insert into Reply
               </button>
             </section>
-
 
             <!-- 5. Suggested Actions -->
             <section class="section-card">
