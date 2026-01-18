@@ -132,21 +132,6 @@
 
           <!-- Response Container -->
           <div id="response-container" class="hidden">
-            <!-- 1. Agent Guidance -->
-            <section class="section-card guidance-card">
-              <h2 class="section-title">Agent Guidance</h2>
-              <div id="guidance-badges" class="badge-row"></div>
-              <div class="guidance-content">
-                <div class="guidance-item">
-                  <span class="label">Reason:</span>
-                  <span id="guidance-reason" class="value"></span>
-                </div>
-                <div class="guidance-item">
-                  <span class="label">Recommendation:</span>
-                  <span id="guidance-recommendation" class="value"></span>
-                </div>
-              </div>
-            </section>
 
             <!-- 2. Confidence & Risk -->
             <section class="section-card">
@@ -220,12 +205,16 @@
                 Insert into Reply
               </button>
             </section>
+           <!-- Follow-up Questions -->
+<!-- Follow-up Questions -->
+<section class="section-card" id="followup-section">
+  <h2 class="section-title centered">Follow-up Questions</h2>
+  <div class="section-subtitle centered">Click to insert into draft</div>
 
-            <!-- 5. Suggested Actions -->
-            <section class="section-card">
-              <h2 class="section-title">Suggested Actions</h2>
-              <ol id="suggested-actions-list" class="actions-list"></ol>
-            </section>
+  <div id="suggested-actions-list" class="actions-list">
+  
+  </div>
+</section>
 
             <!-- 6. Canned Responses -->
             <section class="section-card">
@@ -257,8 +246,7 @@
               </div>
 
               <p class="help-text">
-                Select a response to insert it into the draft. ★ indicates
-                AI-recommended responses.
+                Select a response to insert it into the draft.
               </p>
             </section>
 

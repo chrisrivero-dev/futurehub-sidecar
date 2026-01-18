@@ -40,9 +40,6 @@ const CANNED_RESPONSES = {
   },
 };
 
-// -------------------------------------
-// Sidecar UI Controller
-// -------------------------------------
 class AISidecar {
   constructor() {
     this.form = document.getElementById("draft-request-form");
@@ -55,6 +52,14 @@ class AISidecar {
     this.draftTextarea =
       document.getElementById("draft-text") ||
       document.getElementById("draft-message-box");
+
+    // -----------------------------
+    // FOLLOW-UP QUESTIONS: HARD OFF BY DEFAULT
+    // -----------------------------
+    this.followupSection = document.getElementById("followup-section");
+    if (this.followupSection) {
+      this.followupSection.style.display = "none";
+    }
 
     // Canned dropdown refs
     this.cannedBtn = document.getElementById("canned-dropdown-btn");
@@ -195,14 +200,11 @@ class AISidecar {
       entry.setAttribute("role", "menuitem");
       entry.dataset.cannedId = item?.id || title;
 
-      const preview = content.slice(0, 120) + (content.length > 120 ? "…" : "");
-
       entry.innerHTML = `
       <div class="canned-title">
         ${isRecommended ? "★ " : ""}${title}
       </div>
       <div class="canned-meta">${category}</div>
-      <div class="canned-preview">${preview}</div>
     `;
 
       entry.addEventListener("click", (e) => {
@@ -333,9 +335,6 @@ class AISidecar {
       if (el) el.classList.remove("hidden");
     }
 
-    // 1. Agent Guidance
-    this.renderGuidance(data ? data.agent_guidance : null);
-
     // 2. Confidence & Risk
     this.renderConfidenceRisk(data ? data.intent_classification : null);
 
@@ -348,12 +347,13 @@ class AISidecar {
       data ? data.agent_guidance : null
     );
 
-    // 5. Suggested Actions
-    const suggested =
+    // 5. Follow-up Questions (Phase 3.1)
+    const followups =
       data && data.agent_guidance
-        ? data.agent_guidance.suggested_actions
+        ? data.agent_guidance.suggested_followups
         : null;
-    this.renderSuggestedActions(suggested);
+
+    this.renderFollowupQuestions(followups);
 
     // 6. Canned response recommendation + highlight
     const primaryIntent =
@@ -491,7 +491,9 @@ class AISidecar {
     }
   }
 
-  // ✅ FIXED: Must be named renderDraft (your code was rrenderDraft)
+  // -----------------------------
+  // Draft rendering
+  // -----------------------------
   renderDraft(draft, guidance) {
     console.log("RENDER DRAFT HIT", draft);
 
@@ -503,11 +505,11 @@ class AISidecar {
 
     let text = "";
 
-    // ✅ Case 1: Normal expected shape
+    // ✅ Case 1: Expected (string)
     if (draft && typeof draft.response_text === "string") {
       text = draft.response_text;
 
-      // ✅ Case 2: Nested response_text object (YOUR BUG)
+      // ✅ Case 2: Nested response_text (YOUR CURRENT SHAPE)
     } else if (
       draft &&
       typeof draft.response_text === "object" &&
@@ -515,19 +517,16 @@ class AISidecar {
     ) {
       text = draft.response_text.response_text;
 
-      // ✅ Case 3: Backend accidentally sent full draft object
-    } else if (draft && typeof draft.response_text === "object") {
-      console.warn("Flattening unexpected draft shape", draft);
-      text = JSON.stringify(draft.response_text, null, 2);
+      // ❌ Fallback (debug only)
     } else {
-      console.warn("Unusable draft payload", draft);
+      console.warn("renderDraft: invalid draft payload", draft);
       textarea.value = "";
       return;
     }
 
     textarea.value = text;
 
-    // Badge (UI only)
+    // Badge
     const sourceBadge = document.getElementById("draft-source-badge");
     if (sourceBadge && guidance) {
       if (guidance.auto_send_eligible) {
@@ -543,36 +542,54 @@ class AISidecar {
     }
   }
 
-  renderSuggestedActions(actions) {
+  renderFollowupQuestions(followups) {
     const list = document.getElementById("suggested-actions-list");
     if (!list) return;
 
     list.innerHTML = "";
 
-    if (Array.isArray(actions) && actions.length > 0) {
-      actions.forEach((action) => {
-        const li = document.createElement("li");
-        li.className = "suggested-action";
-        li.textContent = action;
+    const section = document.getElementById("followup-section");
 
-        li.addEventListener("click", () => {
-          const snippet = ACTION_SNIPPETS[action];
-          if (snippet && this.draftTextarea) {
-            const cur = this.draftTextarea.value || "";
-            this.draftTextarea.value = cur + snippet;
-            this.draftTextarea.focus();
-            this.showToast("Inserted suggested action text");
-          }
-        });
+    // HARD GATE: hide section unless followups exist
+    if (!Array.isArray(followups) || followups.length === 0) {
+      if (section) section.style.display = "none";
+      return;
+    }
 
-        list.appendChild(li);
+    // Enable section only when followups exist
+    if (section) section.style.display = "block";
+
+    followups.forEach((f, index) => {
+      // ✅ MATCH BACKEND SHAPE EXACTLY
+      const text = f.question;
+
+      if (!text) return;
+
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "followup-action";
+      item.setAttribute("data-preview", f.key || "");
+
+      item.innerHTML = `
+      <span class="followup-index">${index + 1}</span>
+      <span class="followup-text">${text}</span>
+    `;
+
+      item.title = text; // hover preview fallback
+
+      item.addEventListener("click", () => {
+        if (!this.draftTextarea) return;
+
+        const cur = this.draftTextarea.value || "";
+        const spacer = cur && !cur.endsWith("\n") ? "\n\n" : "";
+        this.draftTextarea.value = cur + spacer + text;
+        this.draftTextarea.focus();
+
+        this.showToast("Inserted follow-up question");
       });
-    }
 
-    if (list.children.length === 0) {
-      list.innerHTML =
-        '<li class="help-text">No suggested actions available</li>';
-    }
+      list.appendChild(item);
+    });
   }
 
   renderConversationContext() {
@@ -643,4 +660,19 @@ class AISidecar {
 // Initialize
 document.addEventListener("DOMContentLoaded", () => {
   new AISidecar();
+});
+// ------------------------------------
+// Follow-up questions toggle (Phase 3.1)
+// ------------------------------------
+document.addEventListener("click", (e) => {
+  if (!e.target.classList.contains("followups-toggle")) return;
+
+  const list = e.target.nextElementSibling;
+  if (!list) return;
+
+  list.classList.toggle("hidden");
+
+  e.target.textContent = list.classList.contains("hidden")
+    ? "▼ Follow-up questions (optional)"
+    : "▲ Follow-up questions (optional)";
 });
