@@ -18,8 +18,15 @@
   /* ===== Typography: Inter (Primary UI Font) ===== */
   #ai-assistant-panel,
   #ai-assistant-panel * {
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-      Helvetica, Arial, sans-serif;
+    font-family:
+      "Inter",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      Helvetica,
+      Arial,
+      sans-serif;
   }
 
   /* Typography - Larger, bolder scale */
@@ -1542,4 +1549,165 @@ button[aria-expanded="true"] .dropdown-caret {
   font-size: 12px; /* EXACT match */
   border-width: 0.5px; /* reduce from 2px */
   line-height: 1;
+}
+/* ============================================
+   EMBEDDED SIDECAR — RIGHT DOCK
+   ============================================ */
+
+.sidecar-wrapper.sidecar-embedded {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 380px;
+  min-width: 320px;
+  max-width: 420px;
+  background: #ffffff;
+  border-left: 1px solid var(--color-border);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidecar-wrapper.sidecar-embedded .sidecar-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidecar-wrapper.sidecar-embedded .sidecar-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================
+   AUTO-SEND CARD — Required by JS
+   IDs: #auto-send-card, #auto-send-badge, #auto-send-reason
+   ============================================ */
+
+/* Container card */
+#auto-send-card {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 2px solid #6ee7b7;
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--spacing-md, 16px);
+  margin: 0 var(--spacing-lg, 24px) var(--spacing-md, 16px)
+    var(--spacing-lg, 24px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
+  position: relative;
+  z-index: 10;
+  animation: auto-send-fade-in 0.3s ease-out;
+}
+
+/* Hidden state — MUST use !important to override inline styles */
+#auto-send-card.hidden {
+  display: none !important;
+}
+
+/* Card content layout */
+.auto-send-card-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* Icon container */
+.auto-send-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  background: #10b981;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auto-send-icon .icon {
+  width: 24px;
+  height: 24px;
+  color: white;
+  stroke-width: 2.5;
+}
+
+/* Text container */
+.auto-send-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Badge — visible by default when card is shown */
+#auto-send-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #059669;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 6px;
+  width: fit-content;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+#auto-send-badge.hidden {
+  display: none !important;
+}
+
+#auto-send-badge::before {
+  content: "✓";
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Reason text */
+#auto-send-reason {
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  color: #065f46;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+/* Fade-in animation */
+@keyframes auto-send-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Ensure hidden utility class works globally */
+.hidden {
+  display: none !important;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 480px) {
+  #auto-send-card {
+    margin: 0 var(--spacing-sm, 12px) var(--spacing-sm, 12px)
+      var(--spacing-sm, 12px);
+    padding: var(--spacing-sm, 12px);
+  }
+
+  .auto-send-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .auto-send-icon .icon {
+    width: 18px;
+    height: 18px;
+  }
 }

@@ -133,6 +133,33 @@
           <!-- Response Container -->
           <div id="response-container" class="hidden">
 
+            <!-- ✅ AUTO-SEND CARD — Must be FIRST, IDs match JS exactly -->
+            <section id="auto-send-card" class="section-card auto-send-card hidden">
+              <div class="auto-send-card-content">
+                <div class="auto-send-icon">
+                  <svg
+                    class="icon"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+                <div class="auto-send-text">
+                  <span id="auto-send-badge" class="badge auto-send-eligible hidden">
+                    Auto-Send Eligible
+                  </span>
+                  <p id="auto-send-reason" class="auto-send-reason"></p>
+                </div>
+              </div>
+            </section>
+
             <!-- 2. Confidence & Risk -->
             <section class="section-card">
               <h2 class="section-title">Confidence & Risk</h2>
@@ -159,7 +186,7 @@
               <div class="metric-explainer">
                 <p>
                   <strong>Confidence</strong> — How certain the AI is that this
-                  response matches the customer’s intent.
+                  response matches the customer's intent.
                 </p>
                 <p>
                   <strong>Safety</strong> — Whether the response is safe to send

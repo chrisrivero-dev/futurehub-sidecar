@@ -5,6 +5,8 @@ Responsible for generating agent-facing response drafts.
 
 from typing import List
 from ai.faq_index import load_faq_snippets
+from ai.auto_send_evaluator import evaluate_auto_send
+
 
 # -------------------------------------------------
 # PHASE 1.5 — knowledge gating rules (LOCKED)

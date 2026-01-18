@@ -1,0 +1,90 @@
+[
+  {
+    "id": "apollo-network-access",
+    "question": "I powered on my Apollo, but I can’t access the dashboard. What should I do?",
+    "answer": "Make sure your Apollo is connected to your local network via Ethernet. Try accessing the dashboard using futurebit-apollo-2.local or futurebit-apollo-btc.local. If those do not work, use your router’s device list or a network scanner to find the Apollo’s IP address and enter it directly into your browser.",
+    "source": "https://www.futurebit.io/apollo-btc-support",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "apollo-hdmi-no-video",
+    "question": "There is no video output on my HDMI monitor. Is my Apollo broken?",
+    "answer": "Make sure the HDMI monitor is connected and powered on before powering on the Apollo. Connecting the monitor after the device has already started may result in no video output.",
+    "source": "https://www.futurebit.io/faq-page2",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "apollo-fan-full-speed",
+    "question": "My Apollo fan is spinning at full speed. Is that normal?",
+    "answer": "Yes. It is normal for the fan to spin at full speed during startup. Once the system finishes booting, the fan speed should slow down automatically.",
+    "source": "https://www.futurebit.io/faq-page2",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "node-low-peer-connections",
+    "question": "My node only shows a small number of connections. Is something wrong?",
+    "answer": "This is normal during the initial sync process. It can take several days for the node to fully synchronize and establish more peer connections.",
+    "source": "https://www.futurebit.io/faq-page2",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "apollo-wifi-connection-issue",
+    "question": "I can’t connect my Apollo to Wi-Fi. What should I check?",
+    "answer": "Ensure you are connecting to a 2.4 GHz Wi-Fi network. The Apollo does not reliably connect to 5 GHz networks.",
+    "source": "https://www.futurebit.io/faq-page2",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "node-sync-errors",
+    "question": "My node shows errors while syncing. Should I be concerned?",
+    "answer": "Syncing a Bitcoin node is resource-intensive, and temporary errors can appear during the process. These usually resolve once syncing completes.",
+    "source": "https://www.futurebit.io/faq-page2",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "standard-unit-detection",
+    "question": "I connected a Standard Unit to my Full Node, but it isn’t detected. What should I do?",
+    "answer": "Make sure the Standard Unit is connected via USB and powered properly. Reboot the Full Node so it can automatically detect the Standard Unit.",
+    "source": "https://www.futurebit.io/standard-unit-support",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "standard-unit-os-requirement",
+    "question": "Do I need to update my Apollo OS to use a Standard Unit?",
+    "answer": "Yes. When connecting a Standard Unit to an Apollo BTC, ensure your operating system is upgraded to a version that supports Standard Units.",
+    "source": "https://www.futurebit.io/standard-unit-support",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "flashing-sd-card-purpose",
+    "question": "Why would I need to reflash my Apollo SD card?",
+    "answer": "Reflashing the SD card can reset the device to a stock state or fix corruption issues caused by power outages or prolonged use.",
+    "source": "https://www.futurebit.io/flashing-sd-card",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "flashing-sd-card-data-loss",
+    "question": "Will flashing my SD card delete my data?",
+    "answer": "Yes. All data on the Micro SD card will be erased, including desktop files and wallets. Be sure to back up important files or move them to the SSD before flashing.",
+    "source": "https://www.futurebit.io/flashing-sd-card",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  },
+  {
+    "id": "etcher-img-warning",
+    "question": "Etcher fails when flashing a compressed image. What should I do?",
+    "answer": "Recent versions of Etcher have issues with compressed image files. Decompress the image first and use the .img file instead of the .img.xz file when flashing.",
+    "source": "https://www.futurebit.io/flashing-sd-card",
+    "trust_tier": "tier_1_official",
+    "autosend_eligible": true
+  }
+]

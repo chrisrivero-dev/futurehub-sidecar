@@ -22,34 +22,32 @@ MAX_CUSTOMER_NAME_LENGTH = 100
 MAX_ATTACHMENTS = 10
 MAX_PAYLOAD_BYTES = 1048576  # 1MB
 
-
 @ai_draft_bp.route('/draft', methods=['POST'])
 def draft():
-    """
-    Generate draft response for support ticket.
-    Conforms to v1.0 API contract.
-    """
     start_time = time.perf_counter()
-    
-    # Check for malformed JSON
+
+    # -----------------------------
+    # Parse JSON
+    # -----------------------------
     try:
         data = request.get_json()
-    except Exception as e:
+    except Exception:
         return error_response(
             code="malformed_json",
             message="Request body must be valid JSON",
             status=400
         )
-    
-    # Check if request body exists
+
     if not data:
         return error_response(
             code="malformed_json",
             message="Request body must be valid JSON",
             status=400
         )
-    
-    # Check payload size
+
+    # -----------------------------
+    # Payload size guard
+    # -----------------------------
     if request.content_length and request.content_length > MAX_PAYLOAD_BYTES:
         return error_response(
             code="payload_too_large",
@@ -60,19 +58,19 @@ def draft():
             },
             status=400
         )
-    
-    # Validate required fields
+
+    # -----------------------------
+    # Required fields
+    # -----------------------------
     required_fields = ['subject', 'latest_message', 'conversation_history']
     missing = []
-    
+
     for field in required_fields:
-        if field not in data:
-            missing.append(field)
-        elif data[field] is None:
+        if field not in data or data[field] is None:
             missing.append(field)
         elif field == 'conversation_history' and not isinstance(data[field], list):
             missing.append(field)
-    
+
     if missing:
         return error_response(
             code="invalid_input",
@@ -83,8 +81,10 @@ def draft():
             },
             status=400
         )
-    
-    # Validate field sizes
+
+    # -----------------------------
+    # Field length validation
+    # -----------------------------
     if len(data['subject']) > MAX_SUBJECT_LENGTH:
         return error_response(
             code="payload_too_large",
@@ -92,7 +92,7 @@ def draft():
             details={"field": "subject", "max_length": MAX_SUBJECT_LENGTH},
             status=400
         )
-    
+
     if len(data['latest_message']) > MAX_MESSAGE_LENGTH:
         return error_response(
             code="payload_too_large",
@@ -100,167 +100,146 @@ def draft():
             details={"field": "latest_message", "max_length": MAX_MESSAGE_LENGTH},
             status=400
         )
-    
-    # Validate conversation_history format
+
     conversation_history = data['conversation_history']
-    
-    if not isinstance(conversation_history, list):
-        return error_response(
-            code="invalid_input",
-            message="Field 'conversation_history' must be an array",
-            details={"field": "conversation_history", "expected_type": "array"},
-            status=400
-        )
-    
+
     if len(conversation_history) > MAX_CONVERSATION_HISTORY:
         return error_response(
             code="payload_too_large",
             message=f"Conversation history exceeds maximum of {MAX_CONVERSATION_HISTORY} messages",
             details={
-                "field": "conversation_history",
                 "message_count": len(conversation_history),
                 "max_messages": MAX_CONVERSATION_HISTORY
             },
             status=400
         )
-    
-    # Validate each message in conversation_history
+
+    # -----------------------------
+    # Validate conversation history items
+    # -----------------------------
     for i, msg in enumerate(conversation_history):
         if not isinstance(msg, dict):
             return error_response(
                 code="invalid_input",
-                message=f"Message at index {i} must be an object with 'role' and 'text' fields",
-                details={"field": "conversation_history", "message_index": i},
+                message=f"Message at index {i} must be an object",
                 status=400
             )
-        
-        if 'role' not in msg or msg['role'] not in ['customer', 'agent']:
+
+        if msg.get('role') not in ['customer', 'agent']:
             return error_response(
                 code="invalid_input",
-                message=f"Message at index {i} must have 'role' field with value 'customer' or 'agent'",
-                details={"field": "conversation_history", "message_index": i},
+                message=f"Message at index {i} must have role 'customer' or 'agent'",
                 status=400
             )
-        
-        if 'text' not in msg or not isinstance(msg['text'], str):
+
+        if not isinstance(msg.get('text'), str):
             return error_response(
                 code="invalid_input",
-                message=f"Message at index {i} must have 'text' field with string value",
-                details={"field": "conversation_history", "message_index": i},
+                message=f"Message at index {i} must contain text",
                 status=400
             )
-        
+
         if len(msg['text']) > MAX_MESSAGE_LENGTH:
             return error_response(
                 code="payload_too_large",
-                message=f"Message text at index {i} exceeds maximum length of {MAX_MESSAGE_LENGTH} characters",
-                details={
-                    "field": "conversation_history",
-                    "message_index": i,
-                    "max_length": MAX_MESSAGE_LENGTH
-                },
+                message=f"Message at index {i} exceeds maximum length",
                 status=400
             )
-    
-    # Validate optional fields
+
+    # -----------------------------
+    # Optional fields
+    # -----------------------------
     customer_name = data.get('customer_name')
     if customer_name and len(customer_name) > MAX_CUSTOMER_NAME_LENGTH:
         return error_response(
             code="payload_too_large",
-            message=f"Field 'customer_name' exceeds maximum length of {MAX_CUSTOMER_NAME_LENGTH} characters",
-            details={"field": "customer_name", "max_length": MAX_CUSTOMER_NAME_LENGTH},
+            message=f"Field 'customer_name' exceeds maximum length",
             status=400
         )
-    
-    # Extract and validate metadata
+
     metadata = data.get("metadata", {})
-    if not isinstance(metadata, dict):
-        metadata = {}
-    
-    # Extract attachments
-    attachments = metadata.get("attachments", [])
-    if not isinstance(attachments, list):
-        attachments = []
-    
+    attachments = metadata.get("attachments", []) if isinstance(metadata, dict) else []
+
     if len(attachments) > MAX_ATTACHMENTS:
         return error_response(
             code="payload_too_large",
-            message=f"Attachments array exceeds maximum of {MAX_ATTACHMENTS} items",
-            details={
-                "field": "metadata.attachments",
-                "attachment_count": len(attachments),
-                "max_attachments": MAX_ATTACHMENTS
-            },
+            message=f"Too many attachments",
             status=400
         )
-    
-        # Mock classification (replace with actual AI processing later)
+
+    # -----------------------------
+    # Intent classification
+    # -----------------------------
     classification = classify_intent(
         subject=data["subject"],
         latest_message=data["latest_message"],
         conversation_history=conversation_history
     )
 
-    
-    # Generate draft using helper function
+    # -----------------------------
+    # Draft generation
+    # -----------------------------
     draft_result = {
         "type": "full",
-        "response_text": generate_mock_draft(data['subject'], data['latest_message'], classification['primary_intent']),
+        "response_text": generate_mock_draft(
+            data["subject"],
+            data["latest_message"],
+            classification["primary_intent"]
+        ),
         "quality_metrics": {}
     }
-    
-    auto_send_eligible = calculate_auto_send_eligible(classification, draft_result, attachments)
+
+    # -----------------------------
+    # Auto-send eligibility (SOURCE OF TRUTH)
+    # -----------------------------
+    auto_send_eligible = calculate_auto_send_eligible(
+        classification,
+        draft_result,
+        attachments
+    )
+
     requires_review = not auto_send_eligible
-    
+
+    # -----------------------------
+    # Response payload (v1.0)
+    # -----------------------------
     response = {
         "success": True,
         "request_id": f"req_{int(time.time())}",
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        
+
         "intent_classification": {
             "primary_intent": classification["primary_intent"],
             "secondary_intents": classification["secondary_intents"],
             "confidence": {
                 "overall": classification["confidence"]["intent_confidence"],
-                "dimensions": {
-                    "intent_confidence": classification["confidence"]["intent_confidence"],
-                    "knowledge_coverage": 0.0,
-                    "draft_quality": 0.0
-                },
-                "label": get_confidence_label(classification["confidence"]["intent_confidence"]),
+                "label": get_confidence_label(
+                    classification["confidence"]["intent_confidence"]
+                ),
                 "ambiguity_detected": classification["confidence"]["ambiguity_detected"]
             },
             "tone_modifier": classification["tone_modifier"],
             "safety_mode": classification["safety_mode"],
-            "device_behavior_detected": classification["device_behavior_detected"],
             "attempted_actions": classification["attempted_actions"],
-            "signal_breakdown": classification["scores"],
-            "classification_reasoning": f"Intent detected as {classification['primary_intent']} based on keyword analysis"
+            "signal_breakdown": classification["scores"]
         },
-        
+
         "draft": {
             "type": draft_result["type"],
             "response_text": draft_result["response_text"],
             "quality_metrics": draft_result["quality_metrics"]
         },
-        
-        "knowledge_retrieval": {
-            "sources_consulted": [],
-            "coverage": "none",
-            "gaps": ["Knowledge retrieval not yet implemented"]
-        },
-        
-       "agent_guidance": {
+
+        "agent_guidance": {
             "requires_review": requires_review,
             "auto_send_eligible": auto_send_eligible,
-            "reason": build_reason(classification, auto_send_eligible),
+            "auto_send_reason": build_reason(classification, auto_send_eligible),
             "recommendation": build_recommendation(classification),
             "suggested_actions": build_suggested_actions(classification),
             "canned_responses": build_canned_response_recommendations(classification)
         }
-
     }
-    
+
     return jsonify(response), 200
 
 

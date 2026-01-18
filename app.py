@@ -6,13 +6,16 @@ POST /api/v1/draft endpoint with intent classification and draft generation
 from flask import Flask, request, jsonify
 from datetime import datetime
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 from intent_classifier import detect_intent
 from ai.draft_generator import generate_draft
 from flask import redirect
 from routes.sidecar_ui import sidecar_ui_bp
 from ai.missing_info_detector import detect_missing_information
-
+from ai.auto_send_classifier import classify_auto_send
 
 
 app = Flask(__name__)
@@ -39,12 +42,14 @@ def draft():
     # ----------------------------
     try:
         data = request.get_json()
+        mode = data.get("mode", "diagnostic")
     except Exception:
         return error_response(
             code="malformed_json",
             message="Request body must be valid JSON",
             status=400,
         )
+
     # 🔥 HARD CONTRACT ENFORCEMENT
     if "message" in data:
         return error_response(
@@ -202,7 +207,7 @@ def draft():
     }
 
     # ----------------------------
-    # Intent
+    # Intent Classification
     # ----------------------------
     classification = detect_intent(
         subject=data["subject"],
@@ -224,13 +229,8 @@ def draft():
     ]
     last_ai_draft = agent_history[-1] if agent_history else None
 
-    # -------------------------------------------------
-    # PHASE 1.1 LOCKED
-    # Do NOT pass `mode` or legacy `message` here.
-    # Draft behavior is derived inside generate_draft().
-    # -------------------------------------------------
     # ----------------------------
-    # Draft (AI generator) -> RETURNS STRING
+    # Draft Generation
     # ----------------------------
     draft_text = generate_draft(
         latest_message=latest_message,
@@ -238,8 +238,6 @@ def draft():
         prior_draft=last_ai_draft,
         prior_agent_messages=agent_history,
     )
-
-
 
     # Normalize into the shape the rest of this file expects
     draft_result = {
@@ -264,11 +262,59 @@ def draft():
     # CRITICAL: sync back into classification for auto-send logic
     classification["confidence"]["intent_confidence"] = confidence_overall
 
-    # Now calculate auto-send
-    auto_send_eligible = calculate_auto_send_eligible(
-        classification=classification,
-        draft_result=draft_result,
-        attachments=attachments,
+    # -------------------------------------------------
+    # Build last_customer_messages (delta-only rule)
+    # -------------------------------------------------
+    last_customer_messages = [
+        m["text"]
+        for m in conversation_history
+        if isinstance(m, dict)
+        and m.get("role") == "customer"
+        and isinstance(m.get("text"), str)
+    ][-2:]
+
+    logger.info("DELTA_ONLY last_customer_messages=%s", last_customer_messages)
+
+    # -------------------------------------------------
+    # Phase 2.1a — Missing Information (Observation Only)
+    # -------------------------------------------------
+    missing_information = detect_missing_information(
+        messages=last_customer_messages,
+        intent={
+            "primary": classification["primary_intent"],
+            "confidence": confidence_overall,
+        },
+        mode=mode,
+        metadata=classification_metadata,
+    )
+
+    logger.info("MODE SET: %s", mode)
+
+    # -------------------------------------------------
+    # Phase X — Auto-send decision (confidence + rules)
+    # This MUST come AFTER intent classification and
+    # missing_information detection.
+    # -------------------------------------------------
+    safety_mode = classification.get("safety_mode", "unknown")
+
+    auto_send_result = classify_auto_send(
+        latest_message=data.get("latest_message", ""),
+        intent=intent,
+        intent_confidence=confidence_overall,
+        safety_mode=safety_mode,
+        missing_information=missing_information,
+    )
+
+    # Extract auto-send fields for response
+    auto_send = auto_send_result.get("auto_send", False)
+    auto_send_reason = auto_send_result.get("auto_send_reason", "")
+
+    logger.info(
+        "AUTO_SEND_DECISION intent=%s confidence=%.2f auto_send=%s reason=%s",
+        intent,
+        confidence_overall,
+        auto_send,
+        auto_send_reason,
     )
 
     # ----------------------------
@@ -312,28 +358,18 @@ def draft():
             "gaps": ["Knowledge retrieval not yet implemented"],
         },
         "agent_guidance": {
-            "auto_send_eligible": auto_send_eligible,
-            "requires_review": not auto_send_eligible,
-            "reason": build_reason(classification, auto_send_eligible),
-            "recommendation": build_recommendation(classification),
+            "auto_send_eligible": auto_send,
+            "requires_review": not auto_send,
+            "reason": auto_send_reason or build_reason(classification, auto_send),
+            "recommendation": build_recommendation(classification, auto_send),
             "suggested_actions": build_suggested_actions(classification),
         },
+        "missing_information": missing_information,
     }
 
-    # -------------------------------------------------
-    # Phase 2.1a — Missing Information (Observation Only)
-    # -------------------------------------------------
-    missing_information = detect_missing_information(
-        messages=last_customer_messages,
-        intent={
-            "primary": classification["primary_intent"],
-            "confidence": confidence_overall,
-        },
-        mode=mode,
-        metadata=classification_metadata,
-    )
-
-    response["missing_information"] = missing_information
+    # Add canned response suggestion if available
+    if canned_response_suggestion:
+        response["agent_guidance"]["canned_response_suggestion"] = canned_response_suggestion
 
     logger.info(
         "missing_information_observed",
@@ -348,47 +384,25 @@ def draft():
         },
     )
 
-    return jsonify(response)
-
-
-    if canned_response_suggestion:
-        response["agent_guidance"]["canned_response_suggestion"] = canned_response_suggestion
+    # -------------------------------------------------
+    # FINAL AUTO-SEND ASSIGNMENT — IMMEDIATELY BEFORE RETURN
+    # Explicit assignment, no setdefault, top-level keys
+    # -------------------------------------------------
+    response["auto_send"] = auto_send
+    response["auto_send_reason"] = auto_send_reason
 
     return jsonify(response), 200
 
 
-def calculate_auto_send_eligible(classification, draft_result, attachments):
-    """
-    Calculate auto-send eligibility per v1.0 contract.
-
-    Criteria (ALL must be true):
-    1. Intent is shipping_status (ONLY)
-    2. Confidence >= 0.85
-    3. Draft type is "full"
-    4. No attachments
-    5. Safety mode is "safe"
-    6. No ambiguity detected
-    """
-    intent = classification["primary_intent"]
-    confidence = classification["confidence"]["intent_confidence"]
-    safety_mode = classification["safety_mode"]
-    ambiguity_detected = classification["confidence"]["ambiguity_detected"]
-    draft_type = draft_result.get("type", "full")
-
-    if intent != "shipping_status":
-        return False
-    if confidence < 0.85:
-        return False
-    if draft_type != "full":
-        return False
-    if attachments and len(attachments) > 0:
-        return False
-    if safety_mode != "safe":
-        return False
-    if ambiguity_detected:
-        return False
-
-    return True
+def get_confidence_label(confidence):
+    """Convert confidence score to label"""
+    if confidence >= 0.85:
+        return "high"
+    if confidence >= 0.70:
+        return "medium"
+    if confidence >= 0.50:
+        return "low"
+    return "very_low"
 
 
 def build_reason(classification, auto_send_eligible):
@@ -401,7 +415,7 @@ def build_reason(classification, auto_send_eligible):
 
     if auto_send_eligible:
         return (
-            f"High-confidence {intent} request meets v1.0 auto-send criteria "
+            f"High-confidence {intent} request meets auto-send criteria "
             "and does not require agent review."
         )
 
@@ -417,25 +431,17 @@ def build_reason(classification, auto_send_eligible):
     )
 
 
-def get_confidence_label(confidence):
-    """Convert confidence score to label"""
-    if confidence >= 0.85:
-        return "high"
-    if confidence >= 0.70:
-        return "medium"
-    if confidence >= 0.50:
-        return "low"
-    return "very_low"
-
-
-def build_recommendation(classification):
+def build_recommendation(classification, auto_send_eligible=False):
     """
     Provide agent-facing recommendation text.
     This function must not imply review when auto-send is allowed.
     """
+    if auto_send_eligible:
+        return "Response may be sent automatically."
+    
     intent = classification.get("primary_intent", "unknown")
     if intent == "shipping_status":
-        return "Response may be sent automatically."
+        return "Review recommended — shipping inquiry."
     return "Agent review recommended before responding."
 
 
@@ -524,9 +530,13 @@ def health():
         ),
         200,
     )
+
+
 @app.route("/", methods=["GET"])
 def root():
     return redirect("/sidecar/")
+
+
 app.register_blueprint(sidecar_ui_bp)
 
 if __name__ == "__main__":

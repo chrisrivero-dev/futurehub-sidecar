@@ -1,0 +1,197 @@
+[
+  {
+    "name": "Shipping ETA missing order number",
+    "input": {
+      "messages": ["Where is my order?"],
+      "intent": { "primary": "shipping", "confidence": 0.86 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": ["order_number"],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Shipping with order number present",
+    "input": {
+      "messages": ["Order #FB12345 has not arrived"],
+      "intent": { "primary": "shipping", "confidence": 0.91 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": [],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Setup missing device model",
+    "input": {
+      "messages": ["I am setting this up for the first time"],
+      "intent": { "primary": "setup", "confidence": 0.79 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": ["device_model"],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Setup with model provided",
+    "input": {
+      "messages": ["Setting up my Apollo II"],
+      "intent": { "primary": "setup", "confidence": 0.84 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": [],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Diagnostic missing device status",
+    "input": {
+      "messages": ["My miner stopped hashing"],
+      "intent": { "primary": "diagnostic", "confidence": 0.88 },
+      "mode": "diagnostic",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": ["device_status"],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Diagnostic with status provided",
+    "input": {
+      "messages": ["Miner is on but hash rate is zero"],
+      "intent": { "primary": "diagnostic", "confidence": 0.92 },
+      "mode": "diagnostic",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": [],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Diagnostic low confidence never blocks",
+    "input": {
+      "messages": ["it broke"],
+      "intent": { "primary": "diagnostic", "confidence": 0.41 },
+      "mode": "diagnostic",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": [],
+      "non_blocking_keys": ["device_status"]
+    }
+  },
+  {
+    "name": "Unknown intent never blocks",
+    "input": {
+      "messages": ["help me now"],
+      "intent": { "primary": "unknown", "confidence": 0.22 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": [],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Explanatory mode does not require diagnostics",
+    "input": {
+      "messages": ["What does syncing mean"],
+      "intent": { "primary": "education", "confidence": 0.77 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": [],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Shipping missing email",
+    "input": {
+      "messages": ["I need shipping help"],
+      "intent": { "primary": "shipping", "confidence": 0.83 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": ["order_number"],
+      "non_blocking_keys": ["email"]
+    }
+  },
+  {
+    "name": "Diagnostic missing uptime",
+    "input": {
+      "messages": ["hash rate keeps dropping"],
+      "intent": { "primary": "diagnostic", "confidence": 0.85 },
+      "mode": "diagnostic",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": ["device_status"],
+      "non_blocking_keys": ["uptime_or_last_reboot"]
+    }
+  },
+  {
+    "name": "Setup missing connection type",
+    "input": {
+      "messages": ["cant connect to dashboard"],
+      "intent": { "primary": "setup", "confidence": 0.81 },
+      "mode": "diagnostic",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": ["connection_type"],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Shipping vague but confident",
+    "input": {
+      "messages": ["order delay"],
+      "intent": { "primary": "shipping", "confidence": 0.74 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": ["order_number"],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Diagnostic all info present",
+    "input": {
+      "messages": ["Miner on, rebooted yesterday, firmware 2.3"],
+      "intent": { "primary": "diagnostic", "confidence": 0.93 },
+      "mode": "diagnostic",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": [],
+      "non_blocking_keys": []
+    }
+  },
+  {
+    "name": "Education intent never blocks",
+    "input": {
+      "messages": ["How does mining work"],
+      "intent": { "primary": "education", "confidence": 0.89 },
+      "mode": "explanatory",
+      "metadata": {}
+    },
+    "expected": {
+      "blocking_keys": [],
+      "non_blocking_keys": []
+    }
+  }
+]

@@ -8,13 +8,13 @@ const ACTION_SNIPPETS = {
     "To help narrow this down, could you please share your debug.log file and the output of `getblockchaininfo`?\n\n",
 
   "Review logs for error patterns":
-    "Once we have the logs, we’ll review them for any error patterns that could explain the behavior.\n\n",
+    "Once we have the logs, we'll review them for any error patterns that could explain the behavior.\n\n",
 
   "Look up order in admin system":
     "Let me check the order details and see where things currently stand.\n\n",
 
   "Provide accurate tracking information":
-    "I’ll confirm the latest tracking information and share an update with you.\n\n",
+    "I'll confirm the latest tracking information and share an update with you.\n\n",
 };
 
 // -------------------------------------
@@ -29,7 +29,7 @@ const CANNED_RESPONSES = {
   "Dashboard / Network Access Issues": {
     intents: ["dashboard_access", "network_issue"],
   },
-  "Node Sync Behavior (What’s Normal)": {
+  "Node Sync Behavior (What's Normal)": {
     intents: ["sync_delay", "setup_help"],
   },
   "Firmware Update Instructions": {
@@ -40,6 +40,9 @@ const CANNED_RESPONSES = {
   },
 };
 
+// -------------------------------------
+// Main AISidecar Class
+// -------------------------------------
 class AISidecar {
   constructor() {
     this.form = document.getElementById("draft-request-form");
@@ -80,10 +83,22 @@ class AISidecar {
   // Init + event wiring
   // -----------------------------
   init() {
-    // Form submission
+    // Form submission (prevent default, use JS)
     if (this.form) {
       this.form.addEventListener("submit", (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        this.generateDraft();
+        return false;
+      });
+    }
+
+    // Generate button click
+    if (this.generateBtn) {
+      this.generateBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("🔥 generateDraft() click");
         this.generateDraft();
       });
     }
@@ -129,6 +144,42 @@ class AISidecar {
           this.closeCannedDropdown();
         }
       });
+    }
+  }
+
+  // -----------------------------
+  // Auto-Send Card Methods
+  // -----------------------------
+  showAutoSendCard(options) {
+    const reason = options && options.reason ? options.reason : "";
+
+    const card = document.getElementById("auto-send-card");
+    if (card) {
+      card.classList.remove("hidden");
+    }
+
+    const reasonEl = document.getElementById("auto-send-reason");
+    if (reasonEl) {
+      reasonEl.textContent = reason || "This ticket qualifies for auto-send.";
+    }
+
+    const badgeEl = document.getElementById("auto-send-badge");
+    if (badgeEl) {
+      badgeEl.classList.remove("hidden");
+    }
+
+    console.log("✅ Auto-send eligible:", reason);
+  }
+
+  hideAutoSendCard() {
+    const card = document.getElementById("auto-send-card");
+    if (card) {
+      card.classList.add("hidden");
+    }
+
+    const badgeEl = document.getElementById("auto-send-badge");
+    if (badgeEl) {
+      badgeEl.classList.add("hidden");
     }
   }
 
@@ -201,11 +252,11 @@ class AISidecar {
       entry.dataset.cannedId = item?.id || title;
 
       entry.innerHTML = `
-      <div class="canned-title">
-        ${isRecommended ? "★ " : ""}${title}
-      </div>
-      <div class="canned-meta">${category}</div>
-    `;
+        <div class="canned-title">
+          ${isRecommended ? "★ " : ""}${title}
+        </div>
+        <div class="canned-meta">${category}</div>
+      `;
 
       entry.addEventListener("click", (e) => {
         e.preventDefault();
@@ -317,8 +368,30 @@ class AISidecar {
     if (this.emptyState) this.emptyState.classList.add("hidden");
 
     // Show response container
-    if (this.responseContainer)
+    if (this.responseContainer) {
       this.responseContainer.classList.remove("hidden");
+    }
+    // -----------------------------
+    // Auto-send visibility (read-only)
+    // -----------------------------
+    if (data?.auto_send === true) {
+      console.log("✅ Auto-send eligible:", data.auto_send_reason);
+
+      this.showAutoSendCard({
+        reason: data.auto_send_reason || "Eligible for auto-send",
+      });
+    } else {
+      this.hideAutoSendCard();
+    }
+
+    // -----------------------------
+    // Auto-send visibility (read-only)
+    // -----------------------------
+    if (data && data.auto_send === true) {
+      this.showAutoSendCard({ reason: data.auto_send_reason });
+    } else {
+      this.hideAutoSendCard();
+    }
 
     // Show cards (if ids exist in DOM)
     const idsToShow = [
@@ -335,13 +408,16 @@ class AISidecar {
       if (el) el.classList.remove("hidden");
     }
 
+    // 1. Agent Guidance
+    this.renderGuidance(data ? data.agent_guidance : null);
+
     // 2. Confidence & Risk
     this.renderConfidenceRisk(data ? data.intent_classification : null);
 
     // 3. Intent Classification
     this.renderIntent(data ? data.intent_classification : null);
 
-    // 4. Draft Response (THIS WAS BREAKING)
+    // 4. Draft Response
     this.renderDraft(
       data ? data.draft : null,
       data ? data.agent_guidance : null
@@ -571,9 +647,9 @@ class AISidecar {
       item.setAttribute("data-preview", f.key || "");
 
       item.innerHTML = `
-      <span class="followup-index">${index + 1}</span>
-      <span class="followup-text">${text}</span>
-    `;
+        <span class="followup-index">${index + 1}</span>
+        <span class="followup-text">${text}</span>
+      `;
 
       item.title = text; // hover preview fallback
 
@@ -632,6 +708,9 @@ class AISidecar {
 
     if (this.draftTextarea) this.draftTextarea.value = "";
 
+    // Hide auto-send card on reset
+    this.hideAutoSendCard();
+
     this.showToast("Form cleared");
   }
 
@@ -657,10 +736,13 @@ class AISidecar {
   }
 }
 
-// Initialize
+// -------------------------------------
+// Initialize on DOM Ready
+// -------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
-  new AISidecar();
+  window.aiSidecar = new AISidecar();
 });
+
 // ------------------------------------
 // Follow-up questions toggle (Phase 3.1)
 // ------------------------------------
