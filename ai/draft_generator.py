@@ -32,10 +32,11 @@ SHIPPING_OPENERS = [
     "Let me help get you an update on your order.",
 ]
 
-# -------------------------------------------------
-# PHASE 1.4 — knowledge enrichment (STUB ONLY)
+## ============================================================
+# ## PHASE 1.4 — Knowledge Enrichment (HELPER, STUB)
 # MUST live at module scope
-# -------------------------------------------------
+# ============================================================
+
 def enrich_with_knowledge(
     draft_text: str,
     intent: str,
@@ -45,6 +46,41 @@ def enrich_with_knowledge(
     Phase 1.4 placeholder.
     Knowledge injection is disabled for now.
     """
+    return draft_text
+# ============================================================
+# ## PHASE 3.1 — Reasoning Style Control (HELPER)
+# ============================================================
+def apply_reasoning_style(
+    draft_text: str,
+    intent: str | None,
+    mode: str,
+) -> str:
+    """
+    Control how much reasoning and explanation is allowed.
+    Keeps drafts thoughtful but not verbose or speculative.
+    """
+
+    # Diagnostic replies should prefer questions over explanations
+    if mode == "diagnostic":
+        if "why this happens" in draft_text.lower():
+            draft_text = draft_text.replace(
+                "why this happens",
+                "what we need to check next"
+            )
+
+    # Explanatory replies should not include troubleshooting steps
+    if mode == "explanatory":
+        forbidden = [
+            "step",
+            "check",
+            "try",
+            "restart",
+            "reboot",
+        ]
+        for word in forbidden:
+            if f"{word} " in draft_text.lower():
+                draft_text = draft_text.replace(word, "")
+
     return draft_text
 
 
@@ -104,9 +140,9 @@ def generate_draft(
     print(">>> FINAL MODE:", mode)
     print(">>> FINAL INTENT:", intent)
 
-    # -------------------------------------------------
-    # PHASE 1.3 — draft differentiation by intent (LOCKED)
-    # -------------------------------------------------
+    # ============================================================
+    # ## PHASE 1.3 — Draft Differentiation by Intent (LOCAL HELPER, LOCKED)
+    # ============================================================
     def _draft_for_intent(intent: str) -> str:
         print(">>> _draft_for_intent CALLED with intent =", intent)
 
@@ -251,9 +287,6 @@ def generate_draft(
 
     draft_text = _draft_for_intent(draft_intent)
 
-
-    
-
     # -------------------------------------------------
     # PHASE 1.4 — knowledge enrichment hook (LOCKED)
     # -------------------------------------------------
@@ -262,6 +295,15 @@ def generate_draft(
         intent=intent,
         mode=mode,
     )
+        # -------------------------------------------------
+    # PHASE 3.1 — reasoning style enforcement
+    # -------------------------------------------------
+    draft_text = apply_reasoning_style(
+        draft_text=draft_text,
+        intent=intent,
+        mode=mode,
+    )
+
 
     # ----------------------------
     # Confidence (safe fallback)
@@ -310,6 +352,9 @@ def generate_draft(
         "canned_response_suggestion": None,
     }
 
+# ============================================================
+# ## PHASE 1.8 — Post-Generation Safety Constraints (HELPER)
+# ============================================================
 
 def apply_draft_constraints(
     draft_text: str,
