@@ -82,6 +82,63 @@ def apply_reasoning_style(
                 draft_text = draft_text.replace(word, "")
 
     return draft_text
+# ============================================================
+# ## PHASE 4.1 — Generic Opener Detector (HELPER)
+# ============================================================
+
+GENERIC_OPENERS = [
+    "thanks for the details",
+    "thanks for reaching out",
+    "let’s narrow this down",
+    "lets narrow this down",
+    "happy to help",
+]
+
+def has_generic_opener(draft_text: str) -> bool:
+    if not draft_text:
+        return True
+
+    first_line = draft_text.strip().split("\n", 1)[0].lower()
+    return any(opener in first_line for opener in GENERIC_OPENERS)
+
+
+# ============================================================
+# ## PHASE 4.2 — Draft Acceptance Gate (HARD)
+# ============================================================
+
+def draft_fails_acceptance_gate(
+    draft_text: str,
+    intent: str | None,
+    mode: str,
+) -> list[str]:
+    """
+    HARD stop rules.
+    If this returns ANY failures → auto-send is forbidden.
+    """
+
+    failures: list[str] = []
+
+    if not draft_text.strip():
+        failures.append("empty_draft")
+
+    # 1️⃣ Generic opener is NOT allowed for concrete intents
+    if intent not in ("unknown_vague", None):
+        if has_generic_opener(draft_text):
+            failures.append("generic_opener")
+
+    # 2️⃣ Diagnostic replies must ask something
+    if mode == "diagnostic":
+        if "?" not in draft_text:
+            failures.append("diagnostic_no_questions")
+
+    # 3️⃣ Explanatory replies must not include troubleshooting
+    if mode == "explanatory":
+        forbidden = ["step", "check", "try", "restart", "reboot"]
+        lowered = draft_text.lower()
+        if any(word in lowered for word in forbidden):
+            failures.append("explanatory_contains_troubleshooting")
+
+    return failures
 
 
 # -------------------------------------------------
@@ -341,6 +398,26 @@ def generate_draft(
         intent=intent,
         tone_modifier=tone_modifier,
     )
+    # -------------------------------------------------
+    # PHASE 4 — Acceptance Gate (HARD)
+    # -------------------------------------------------
+    failures = draft_fails_acceptance_gate(
+        draft_text=draft_text,
+        intent=intent,
+        mode=mode,
+    )
+
+    if failures:
+        return {
+            "type": "requires_review",
+            "response_text": draft_text,
+            "quality_metrics": {
+                "mode": mode,
+                "delta_enforced": True,
+                "acceptance_failures": failures,
+            },
+            "canned_response_suggestion": None,
+        }
 
     return {
         "type": "full",
