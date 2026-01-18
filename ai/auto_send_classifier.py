@@ -21,12 +21,31 @@ def _load_rules() -> Dict[str, Any]:
 
 
 def classify_auto_send(
+    *,
     latest_message: str,
-    intent: str,
+    intent: str | None,
     intent_confidence: float,
     safety_mode: str,
-    missing_information: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    draft_text: str = "",
+    acceptance_failures: list[str] | None = None,
+    missing_information: dict | None = None,
+) -> dict:
+    """
+    HARD deny-by-default auto-send classifier.
+    Returns ONLY:
+      - auto_send (bool)
+      - auto_send_reason (str)
+    """
+
+    # ----------------------------
+    # HARD NORMALIZATION (CRITICAL)
+    # ----------------------------
+    if not isinstance(draft_text, str):
+        draft_text = ""
+
+    acceptance_failures = acceptance_failures or []
+    missing_information = missing_information or {}
+
     """
     Determine auto-send eligibility.
     
@@ -108,29 +127,112 @@ def classify_auto_send(
                 "auto_send_reason": f"Eligible: phrase match '{phrase}' for intent '{intent}'",
             }
 
-    # -------------------------------------------------
-    # GATE 5: Confidence threshold (fallback)
-    # Only applies if NO phrase matched above.
-    # -------------------------------------------------
-    global_min_conf = float(rules.get("min_confidence", 1.0))
-    intent_min_conf = float(cfg.get("min_confidence", global_min_conf))
-    
-    if intent_confidence < intent_min_conf:
+  # ============================================================
+# Phase 5A — Auto-Send Eligibility Gate (HARD)
+# ============================================================
+
+AUTO_SEND_ALLOWED_INTENTS = {
+    "shipping_status",
+}
+
+AUTO_SEND_MIN_CONFIDENCE = 0.85
+
+
+def classify_auto_send(
+    *,
+    latest_message: str,
+    intent: str | None,
+    intent_confidence: float,
+    safety_mode: str,
+    draft_text: str,
+    acceptance_failures: list[str] | None = None,
+    missing_information: dict | None = None,
+) -> dict:
+    """
+    HARD deny-by-default auto-send classifier.
+    Contract:
+      Returns {
+        "auto_send": bool,
+        "auto_send_reason": str
+      }
+    """
+
+    acceptance_failures = acceptance_failures or []
+    missing_information = missing_information or {}
+
+    # ----------------------------
+    # Gate 1 — Acceptance gate MUST pass
+    # ----------------------------
+    if acceptance_failures:
+        return {
+            "auto_send": False,
+            "auto_send_reason": "Blocked: acceptance gate failed",
+        }
+
+    # ----------------------------
+    # Gate 2 — Intent allowlist
+    # ----------------------------
+    if intent not in AUTO_SEND_ALLOWED_INTENTS:
+        return {
+            "auto_send": False,
+            "auto_send_reason": f"Blocked: intent '{intent}' not eligible",
+        }
+
+    # ----------------------------
+    # Gate 3 — Safety mode
+    # ----------------------------
+    if safety_mode != "safe":
+        return {
+            "auto_send": False,
+            "auto_send_reason": "Blocked: unsafe content",
+        }
+
+    # ----------------------------
+    # Gate 4 — Confidence threshold
+    # ----------------------------
+    if intent_confidence < AUTO_SEND_MIN_CONFIDENCE:
         return {
             "auto_send": False,
             "auto_send_reason": (
-                f"Blocked: confidence {intent_confidence:.2f} < threshold {intent_min_conf:.2f} "
-                f"for '{intent}' (no phrase match)"
+                f"Blocked: confidence {intent_confidence:.2f} < {AUTO_SEND_MIN_CONFIDENCE:.2f}"
             ),
         }
 
-    # -------------------------------------------------
-    # ALL GATES PASSED (high confidence, no phrase needed)
-    # -------------------------------------------------
+    # ----------------------------
+    # Gate 5 — Questions are NOT allowed
+    # ----------------------------
+    if "?" in draft_text:
+        return {
+            "auto_send": False,
+            "auto_send_reason": "Blocked: draft contains question",
+        }
+
+    # ----------------------------
+    # Gate 6 — Diagnostic language NOT allowed
+    # ----------------------------
+    forbidden_words = [
+        "check",
+        "try",
+        "restart",
+        "reboot",
+        "confirm",
+        "step",
+        "troubleshoot",
+    ]
+
+    lowered = draft_text.lower()
+    if any(word in lowered for word in forbidden_words):
+        return {
+            "auto_send": False,
+            "auto_send_reason": "Blocked: diagnostic language detected",
+        }
+
+    # ----------------------------
+    # PASS — Auto-send allowed
+    # ----------------------------
     return {
         "auto_send": True,
         "auto_send_reason": (
-            f"Eligible: intent='{intent}', confidence={intent_confidence:.2f}, "
-            f"safety='{safety_mode_norm}'"
+            f"Eligible: intent='{intent}', confidence={intent_confidence:.2f}"
         ),
     }

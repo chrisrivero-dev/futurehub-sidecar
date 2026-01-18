@@ -15,7 +15,11 @@ from ai.draft_generator import generate_draft
 from flask import redirect
 from routes.sidecar_ui import sidecar_ui_bp
 from ai.missing_info_detector import detect_missing_information
-from ai.auto_send_classifier import classify_auto_send
+from ai.auto_send_evaluator import evaluate_auto_send
+
+print(">>> evaluate_auto_send imported:", evaluate_auto_send)
+
+
 
 
 app = Flask(__name__)
@@ -290,32 +294,57 @@ def draft():
 
     logger.info("MODE SET: %s", mode)
 
-    # -------------------------------------------------
+        # -------------------------------------------------
     # Phase X — Auto-send decision (confidence + rules)
-    # This MUST come AFTER intent classification and
-    # missing_information detection.
+    # MUST come AFTER:
+    #  - intent classification
+    #  - missing_information detection
+    #  - draft_text exists
     # -------------------------------------------------
     safety_mode = classification.get("safety_mode", "unknown")
 
-    auto_send_result = classify_auto_send(
-        latest_message=data.get("latest_message", ""),
+    # Draft output (needed for auto-send hard gates)
+    draft_text = (
+        draft_result.get("response_text", "")
+        if isinstance(draft_result, dict)
+        else ""
+    )
+
+    quality_metrics = draft_result.get("quality_metrics", {}) or {}
+    acceptance_failures = quality_metrics.get("acceptance_failures", []) or []
+
+    # IMPORTANT:
+    # Your classifier confidence can be very low even when draft intent is forced.
+    # For shipping_status, raise confidence when we deterministically detect shipping keywords.
+    autosend_confidence = float(confidence_overall or 0.0)
+    msg_lower = (latest_message or "").lower()
+
+    if intent == "shipping_status":
+        if any(k in msg_lower for k in ["where is my order", "order status", "tracking", "shipment", "shipping"]):
+            autosend_confidence = max(autosend_confidence, 0.90)
+
+    auto_send_result = evaluate_auto_send(
+        message=latest_message or "",
         intent=intent,
-        intent_confidence=confidence_overall,
+        intent_confidence=autosend_confidence,
         safety_mode=safety_mode,
+        draft_text=draft_text,
+        acceptance_failures=acceptance_failures,
         missing_information=missing_information,
     )
 
-    # Extract auto-send fields for response
-    auto_send = auto_send_result.get("auto_send", False)
-    auto_send_reason = auto_send_result.get("auto_send_reason", "")
+    auto_send = bool(auto_send_result.get("auto_send", False))
+    auto_send_reason = str(auto_send_result.get("auto_send_reason", ""))
 
     logger.info(
-        "AUTO_SEND_DECISION intent=%s confidence=%.2f auto_send=%s reason=%s",
+        "AUTO_SEND_DECISION intent=%s cls_conf=%.2f used_conf=%.2f auto_send=%s reason=%s",
         intent,
-        confidence_overall,
+        float(confidence_overall or 0.0),
+        float(autosend_confidence or 0.0),
         auto_send,
         auto_send_reason,
     )
+
 
     # ----------------------------
     # Response
