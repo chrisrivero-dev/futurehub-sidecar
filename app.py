@@ -40,9 +40,15 @@ MAX_CUSTOMER_NAME_LENGTH = 100
 MAX_ATTACHMENTS = 10
 MAX_PAYLOAD_BYTES = 1048576  # 1MB
 
-@app.route("/", methods=["GET"])
-def health():
+@app.route("/", methods=["GET"], endpoint="root_health")
+def root_health():
     return "OK", 200
+
+@app.route("/health", methods=["GET"], endpoint="railway_health")
+def railway_health():
+    return {"status": "ok"}, 200
+
+
 
 
 @app.route("/api/v1/draft", methods=["POST"])
