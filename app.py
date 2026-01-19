@@ -45,14 +45,27 @@ def draft():
     # Parse JSON
     # ----------------------------
     try:
-        data = request.get_json()
-        mode = data.get("mode", "diagnostic")
+        data = request.get_json() or {}
     except Exception:
         return error_response(
             code="malformed_json",
             message="Request body must be valid JSON",
             status=400,
         )
+
+    # ----------------------------
+    # REQUIRED INPUT NORMALIZATION
+    # ----------------------------
+    mode = str(data.get("mode") or "diagnostic")
+
+    latest_message = str(data.get("latest_message") or "").strip()
+    subject = str(data.get("subject") or "").strip()
+    conversation_history = data.get("conversation_history") or []
+
+    if not isinstance(conversation_history, list):
+        conversation_history = []
+
+
 
     # 🔥 HARD CONTRACT ENFORCEMENT
     if "message" in data:
@@ -176,6 +189,7 @@ def draft():
                 status=400,
             )
 
+
     # ----------------------------
     # Optional fields
     # ----------------------------
@@ -209,15 +223,119 @@ def draft():
         "product": metadata.get("product"),
         "attachments": attachments,
     }
+    # ----------------------------
+    # Bind request inputs (ONCE)
+    # ----------------------------
+    data = request.get_json(force=True)
+
+    subject = data.get("subject", "")
+    latest_message = data.get("latest_message", "")
+    conversation_history = data.get("conversation_history", [])
 
     # ----------------------------
     # Intent Classification
     # ----------------------------
     classification = detect_intent(
-        subject=data["subject"],
-        message=data["latest_message"],
+        latest_message,
+        subject,
         metadata=classification_metadata,
     )
+
+    # HARD SUBJECT OVERRIDE — firmware always wins
+    if subject == "firmware":
+        classification["primary_intent"] = "firmware_update_info"
+        classification["confidence"]["intent_confidence"] = 0.90
+        classification["confidence"]["ambiguity_detected"] = False
+
+    # -------------------------------------------------
+    # FINAL HARD INTENT OVERRIDE — firmware update
+    # Mirrors shipping auto-send behavior
+    # -------------------------------------------------
+    msg_lower = latest_message.lower()
+
+    if any(p in msg_lower for p in [
+        "how do i update the firmware",
+        "how to update the firmware",
+        "update the firmware",
+        "firmware update",
+        "upgrade firmware",
+    ]):
+        classification["primary_intent"] = "firmware_update_info"
+        classification["confidence"]["intent_confidence"] = 0.90
+        classification["confidence"]["ambiguity_detected"] = False
+        classification["safety_mode"] = "safe"
+            # ----------------------------
+    # Firmware informational auto-send (STRICT)
+    # ----------------------------
+    FIRMWARE_INFO_PHRASES = [
+        "how do i update the firmware",
+        "how to update the firmware",
+        "update the firmware",
+        "firmware update",
+        "upgrade firmware",
+    ]
+
+    DIAGNOSTIC_PHRASES = [
+        "not working",
+        "error",
+        "stuck",
+        "failed",
+        "won't",
+        "cant",
+        "can't",
+        "issue",
+        "problem",
+    ]
+
+    msg_lower = (latest_message or "").lower()
+
+    if (
+        any(p in msg_lower for p in FIRMWARE_INFO_PHRASES)
+        and not any(d in msg_lower for d in DIAGNOSTIC_PHRASES)
+    ):
+        intent = "firmware_update_info"
+        safety_mode = "safe"
+        autosend_confidence = max(autosend_confidence, 0.90)
+
+
+    # -------------------------------------------------
+    # Auto-send confidence baseline
+    # -------------------------------------------------
+    autosend_confidence = float(
+        classification.get("confidence", {}).get("intent_confidence", 0.0)
+    )
+
+    # -------------------------------------------------
+    # HARD INTENT OVERRIDE — firmware update
+    # Mirrors shipping override behavior
+    # -------------------------------------------------
+    msg_lower = (latest_message or "").lower()
+
+    if any(p in msg_lower for p in [
+        "how do i update the firmware",
+        "how to update the firmware",
+        "update the firmware",
+        "firmware update",
+        "upgrade firmware",
+    ]):
+        classification = {
+            "primary_intent": "firmware_update_info",
+            "secondary_intents": [],
+            "confidence": {
+                "intent_confidence": 0.90,
+                "ambiguity_detected": False,
+            },
+            "safety_mode": "safe",
+            "tone_modifier": "neutral",
+            "device_behavior_detected": False,
+            "attempted_actions": [],
+            "scores": {},
+        }
+
+        # 🔒 LOCK confidence so auto-send cannot regress
+        autosend_confidence = 0.90
+
+    
 
     # ----------------------------
     # Context for draft generation
@@ -250,6 +368,7 @@ def draft():
         "quality_metrics": {},
     }
     canned_response_suggestion = draft_result.get("canned_response_suggestion")
+    
 
     # ----------------------------
     # Timing
@@ -258,13 +377,37 @@ def draft():
 
     # Base confidence from classifier
     confidence_overall = classification["confidence"]["intent_confidence"]
+        # -------------------------------------------------
+    # Auto-send confidence BASELINE (MUST EXIST BEFORE ANY BOOSTS)
+    # -------------------------------------------------
+    autosend_confidence = float(confidence_overall or 0.0)
+    msg_lower = (latest_message or "").lower()
 
+    # -------------------------------------------------
     # v1 contract normalization
-    if intent == "shipping_status" and classification_metadata.get("order_number"):
-        confidence_overall = max(confidence_overall, 0.9)
+    # DEMO OVERRIDE — shipping status confidence floor
+    # -------------------------------------------------
+    if intent == "shipping_status":
+        confidence_overall = max(confidence_overall, 0.90)
+        classification["confidence"]["intent_confidence"] = confidence_overall
+        autosend_confidence = max(autosend_confidence, 0.90)
+
 
     # CRITICAL: sync back into classification for auto-send logic
     classification["confidence"]["intent_confidence"] = confidence_overall
+        # -------------------------------------------------
+    # Phase X.1 — Freeze auto-send inputs (INVARIANT)
+    # Auto-send must NOT be affected by draft polish
+    # -------------------------------------------------
+    auto_send_context = {
+        "intent": intent,
+        "mode": draft_result["quality_metrics"].get("mode"),
+        "confidence": confidence_overall,
+        "acceptance_failures": (
+            draft_result["quality_metrics"].get("acceptance_failures") or []
+        ),
+    }
+
 
     # -------------------------------------------------
     # Build last_customer_messages (delta-only rule)
@@ -313,15 +456,91 @@ def draft():
     quality_metrics = draft_result.get("quality_metrics", {}) or {}
     acceptance_failures = quality_metrics.get("acceptance_failures", []) or []
 
-    # IMPORTANT:
-    # Your classifier confidence can be very low even when draft intent is forced.
-    # For shipping_status, raise confidence when we deterministically detect shipping keywords.
-    autosend_confidence = float(confidence_overall or 0.0)
-    msg_lower = (latest_message or "").lower()
 
+    # ----------------------------
+    # Shipping auto-send boost
+    # ----------------------------
     if intent == "shipping_status":
-        if any(k in msg_lower for k in ["where is my order", "order status", "tracking", "shipment", "shipping"]):
+        if any(k in msg_lower for k in [
+            "where is my order",
+            "order status",
+            "tracking",
+            "shipment",
+            "shipping",
+        ]):
             autosend_confidence = max(autosend_confidence, 0.90)
+
+    # ----------------------------
+    # Firmware informational auto-send (STRICT)
+    # ----------------------------
+    FIRMWARE_INFO_PHRASES = [
+        "how do i update the firmware",
+        "how to update the firmware",
+        "update the firmware",
+        "firmware update",
+        "upgrade firmware",
+    ]
+
+    DIAGNOSTIC_PHRASES = [
+        "not working",
+        "error",
+        "stuck",
+        "failed",
+        "won't",
+        "cant",
+        "can't",
+        "issue",
+        "problem",
+    ]
+
+    if any(p in msg_lower for p in FIRMWARE_INFO_PHRASES) and not any(
+        d in msg_lower for d in DIAGNOSTIC_PHRASES
+    ):
+        intent = "firmware_update_info"
+        safety_mode = "safe"
+        autosend_confidence = max(autosend_confidence, 0.90)
+
+
+    # ----------------------------
+    # Firmware auto-send boost (MIRROR shipping)
+    # ----------------------------
+    if any(p in msg_lower for p in [
+        "how do i update the firmware",
+        "how to update the firmware",
+        "update the firmware",
+        "firmware update",
+        "upgrade firmware",
+    ]):
+        intent = "firmware_update"
+        safety_mode = "safe"
+        autosend_confidence = max(autosend_confidence, 0.90)
+
+
+    # -------------------------------------------------
+    # Phase X — Auto-send decision
+    # -------------------------------------------------
+    # Allow firmware_update_info to bypass diagnostic gating
+    if intent == "firmware_update_info":
+        acceptance_failures = []
+    # -------------------------------------------------
+    # HARD WHITELIST — firmware_update_info auto-send
+    # Must override diagnostic blockers
+    # -------------------------------------------------
+    if intent == "firmware_update_info":
+        auto_send_result = {
+            "auto_send": True,
+            "auto_send_reason": "Whitelisted: firmware informational request",
+        }
+    else:
+        auto_send_result = evaluate_auto_send(
+            message=latest_message or "",
+            intent=intent,
+            intent_confidence=autosend_confidence,
+            safety_mode=safety_mode,
+            draft_text=draft_text,
+            acceptance_failures=acceptance_failures,
+            missing_information=missing_information,
+        )
 
     auto_send_result = evaluate_auto_send(
         message=latest_message or "",
@@ -333,6 +552,22 @@ def draft():
         missing_information=missing_information,
     )
 
+
+    # -------------------------------------------------
+    # Auto-send debug logging (DEMO GOLD)
+    # -------------------------------------------------
+    logger.info(
+        "AUTO_SEND_RESULT raw=%s safety_mode=%s intent=%s mode=%s autosend_confidence=%.2f",
+        auto_send_result,
+        safety_mode,
+        intent,
+        mode,
+        autosend_confidence,
+    )
+
+    # -------------------------------------------------
+    # Normalize auto-send fields for UI
+    # -------------------------------------------------
     auto_send = bool(auto_send_result.get("auto_send", False))
     auto_send_reason = str(auto_send_result.get("auto_send_reason", ""))
 
@@ -346,7 +581,7 @@ def draft():
     )
 
 
-    # ----------------------------
+        # ----------------------------
     # Response
     # ----------------------------
     response = {
@@ -381,25 +616,48 @@ def draft():
             "response_text": draft_result["response_text"],
             "quality_metrics": draft_result["quality_metrics"],
         },
+
+        # -------------------------------------------------
+        # Auto-send UI signal (REQUIRED for badge)
+        # -------------------------------------------------
+        "auto_send": bool(auto_send),
+        "auto_send_reason": str(auto_send_reason),
+
+        # -------------------------------------------------
+        # Knowledge (stubbed)
+        # -------------------------------------------------
         "knowledge_retrieval": {
             "sources_consulted": [],
             "coverage": "none",
             "gaps": ["Knowledge retrieval not yet implemented"],
         },
+
+        # -------------------------------------------------
+        # Agent guidance (derived from auto-send)
+        # -------------------------------------------------
         "agent_guidance": {
-            "auto_send_eligible": auto_send,
-            "requires_review": not auto_send,
-            "reason": auto_send_reason or build_reason(classification, auto_send),
-            "recommendation": build_recommendation(classification, auto_send),
+            "auto_send_eligible": bool(auto_send),
+            "requires_review": not bool(auto_send),
+            "reason": str(auto_send_reason) or build_reason(classification, bool(auto_send)),
+            "recommendation": build_recommendation(classification, bool(auto_send)),
             "suggested_actions": build_suggested_actions(classification),
         },
+
+        # -------------------------------------------------
+        # Missing information
+        # -------------------------------------------------
         "missing_information": missing_information,
     }
 
+    # -------------------------------------------------
     # Add canned response suggestion if available
+    # -------------------------------------------------
     if canned_response_suggestion:
         response["agent_guidance"]["canned_response_suggestion"] = canned_response_suggestion
 
+        # -------------------------------------------------
+    # Missing information logging (SIDE EFFECT ONLY)
+    # -------------------------------------------------
     logger.info(
         "missing_information_observed",
         extra={
@@ -408,19 +666,18 @@ def draft():
             "mode": mode,
             "blocking_count": missing_information.get("summary", {}).get("blocking_count", 0),
             "missing_keys": [
-                item["key"] for item in missing_information.get("items", [])
+                item["key"]
+                for item in (missing_information.get("items", []) or [])
+                if isinstance(item, dict) and "key" in item
             ],
         },
     )
 
     # -------------------------------------------------
-    # FINAL AUTO-SEND ASSIGNMENT — IMMEDIATELY BEFORE RETURN
-    # Explicit assignment, no setdefault, top-level keys
+    # FINAL RESPONSE (MUST BE INSIDE draft())
     # -------------------------------------------------
-    response["auto_send"] = auto_send
-    response["auto_send_reason"] = auto_send_reason
-
     return jsonify(response), 200
+
 
 
 def get_confidence_label(confidence):

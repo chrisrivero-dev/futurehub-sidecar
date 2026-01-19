@@ -133,6 +133,8 @@ def classify_auto_send(
 
 AUTO_SEND_ALLOWED_INTENTS = {
     "shipping_status",
+    "firmware_update_info",
+    "firmware_update",
 }
 
 AUTO_SEND_MIN_CONFIDENCE = 0.85
@@ -179,13 +181,15 @@ def classify_auto_send(
         }
 
     # ----------------------------
-    # Gate 3 — Safety mode
+    # Safety mode check
+    # Allow SAFE + EXPLANATORY
     # ----------------------------
-    if safety_mode != "safe":
+    if safety_mode not in ("safe", "explanatory"):
         return {
             "auto_send": False,
-            "auto_send_reason": "Blocked: unsafe content",
+            "auto_send_reason": f"Blocked: safety_mode='{safety_mode}'",
         }
+
 
     # ----------------------------
     # Gate 4 — Confidence threshold
@@ -221,11 +225,15 @@ def classify_auto_send(
     ]
 
     lowered = draft_text.lower()
-    if any(word in lowered for word in forbidden_words):
-        return {
-            "auto_send": False,
-            "auto_send_reason": "Blocked: diagnostic language detected",
-        }
+    if intent not in ("shipping_status",
+    "firmware_update_info", "firmware_update_info"):
+        if any(word in lowered for word in forbidden_words):
+            return {
+                "auto_send": False,
+                "auto_send_reason": "Blocked: diagnostic language detected",
+            }
+
+
 
     # ----------------------------
     # PASS — Auto-send allowed

@@ -209,7 +209,7 @@ def detect_missing_information(
     # ==================================================
     # DIAGNOSTIC
     # ==================================================
-    if primary in ("diagnostic", "not_hashing", "sync_delay"):
+    if primary in ("diagnostic", "not_hashing", "sync_delay", "firmware_update_info"):
         if _meta_all_info_present(metadata):
             return _final([], confidence)
 
