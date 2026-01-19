@@ -29,6 +29,10 @@ def llm_allowed():
 
 
 app = Flask(__name__)
+@app.route("/", methods=["GET", "HEAD"], endpoint="railway_root", provide_automatic_options=False)
+def railway_root():
+    return "OK", 200
+
 app.register_blueprint(sidecar_ui_bp)
 
 
@@ -39,14 +43,6 @@ MAX_CONVERSATION_HISTORY = 50
 MAX_CUSTOMER_NAME_LENGTH = 100
 MAX_ATTACHMENTS = 10
 MAX_PAYLOAD_BYTES = 1048576  # 1MB
-
-@app.route("/", methods=["GET"], endpoint="root_health")
-def root_health():
-    return "OK", 200
-
-@app.route("/health", methods=["GET"], endpoint="railway_health")
-def railway_health():
-    return {"status": "ok"}, 200
 
 
 
@@ -868,11 +864,6 @@ def health():
         ),
         200,
     )
-
-
-@app.route("/", methods=["GET"])
-def root():
-    return redirect("/sidecar/")
 
 
 if __name__ == "__main__":
