@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify
 from datetime import datetime
 import time
 import logging
+import os 
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +20,17 @@ from ai.auto_send_evaluator import evaluate_auto_send
 
 print(">>> evaluate_auto_send imported:", evaluate_auto_send)
 
+# -----------------------------------
+# LLM kill switch (Railway / Demo safe)
+# -----------------------------------
+def llm_allowed():
+    return os.getenv("LLM_ENABLED", "false").lower() == "true"
 
 
 
 app = Flask(__name__)
+app.register_blueprint(sidecar_ui_bp)
+
 
 # Payload size limits (v1.0 contract)
 MAX_SUBJECT_LENGTH = 500
@@ -32,22 +40,23 @@ MAX_CUSTOMER_NAME_LENGTH = 100
 MAX_ATTACHMENTS = 10
 MAX_PAYLOAD_BYTES = 1048576  # 1MB
 
+@app.route("/", methods=["GET"])
+def health():
+    return "OK", 200
+
 
 @app.route("/api/v1/draft", methods=["POST"])
 def draft():
-    # Ensure safety_mode is always defined (required for all return paths)
-    safety_mode = None
-
     """
     Generate draft response for support ticket.
     Conforms to v1.0 API contract.
     """
-    autosend_confidence = 0.0
 
+    autosend_confidence = 0.0
     start_time = time.perf_counter()
 
     # ----------------------------
-    # Parse JSON
+    # Parse JSON (KEEP THIS)
     # ----------------------------
     try:
         data = request.get_json() or {}
@@ -57,6 +66,19 @@ def draft():
             message="Request body must be valid JSON",
             status=400,
         )
+
+    # ----------------------------
+    # LLM kill switch (ADD THIS)
+    # ----------------------------
+    if not llm_allowed():
+        return jsonify({
+            "draft_available": False,
+            "reason": "LLM disabled",
+            "suggested_actions": ["Use approved canned response"],
+            "auto_send_eligible": False,
+            "confidence": 0.0,
+        }), 200
+
 
     # ----------------------------
     # REQUIRED INPUT NORMALIZATION
@@ -346,6 +368,7 @@ def draft():
     # Context for draft generation
     # ----------------------------
     intent = classification["primary_intent"]
+    safety_mode = classification["safety_mode"]
     latest_message = data["latest_message"]
 
     # Pull prior agent messages (including previous AI drafts)
@@ -527,18 +550,30 @@ def draft():
         safety_mode = "safe"
         autosend_confidence = max(autosend_confidence, 0.90)
 
+        # -------------------------------------------------
+    # DEFAULT auto-send result (deny-by-default)
+    # MUST exist for all execution paths
+    # -------------------------------------------------
+    auto_send_result = {
+        "auto_send": False,
+        "auto_send_reason": "Not evaluated",
+    }
 
     # -------------------------------------------------
     # Phase X — Auto-send decision
+    # -------------------------------------------------
 
     # --- NORMALIZE SHIPPING ETA → SHIPPING STATUS (AUTO-SEND PARITY) ---
     if intent == "shipping_eta":
         intent = "shipping_status"
 
     # -------------------------------------------------
-    # Allow firmware_update_info to bypass diagnostic gating
-    if intent == "firmware_update_info":
-        acceptance_failures = []
+    # FINAL ACCEPTANCE OVERRIDE (DEMO-SAFE)
+    # -------------------------------------------------
+    if intent == "firmware_update":
+        intent = "firmware_update_info"
+
+
     # -------------------------------------------------
     # HARD WHITELIST — firmware_update_info auto-send
     # Must override diagnostic blockers
@@ -558,17 +593,6 @@ def draft():
             acceptance_failures=acceptance_failures,
             missing_information=missing_information,
         )
-
-    auto_send_result = evaluate_auto_send(
-        message=latest_message or "",
-        intent=intent,
-        intent_confidence=autosend_confidence,
-        safety_mode=safety_mode,
-        draft_text=draft_text,
-        acceptance_failures=acceptance_failures,
-        missing_information=missing_information,
-    )
-
 
     # -------------------------------------------------
     # Auto-send debug logging (DEMO GOLD)
@@ -713,8 +737,10 @@ def build_reason(classification, auto_send_eligible):
     Human-readable explanation for agent guidance.
     Must satisfy v1.0 contract expectations.
     """
-    intent = classification["primary_intent"]
-    safety_mode = classification["safety_mode"]
+    intent = classification.get("primary_intent")
+    safety_mode = classification.get("safety_mode")
+  
+    print("BUILD_REASON → intent:", intent, "safety_mode:", safety_mode)
 
     if auto_send_eligible:
         return (
@@ -732,6 +758,7 @@ def build_reason(classification, auto_send_eligible):
         f"Intent '{intent}' does not meet auto-send criteria "
         "and requires agent review."
     )
+
 
 
 def build_recommendation(classification, auto_send_eligible=False):
@@ -842,7 +869,7 @@ def root():
     return redirect("/sidecar/")
 
 
-app.register_blueprint(sidecar_ui_bp)
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
