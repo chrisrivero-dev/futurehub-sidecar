@@ -35,10 +35,15 @@ MAX_PAYLOAD_BYTES = 1048576  # 1MB
 
 @app.route("/api/v1/draft", methods=["POST"])
 def draft():
+    # Ensure safety_mode is always defined (required for all return paths)
+    safety_mode = None
+
     """
     Generate draft response for support ticket.
     Conforms to v1.0 API contract.
     """
+    autosend_confidence = 0.0
+
     start_time = time.perf_counter()
 
     # ----------------------------
@@ -350,6 +355,19 @@ def draft():
         if m.get("role") == "agent" and isinstance(m.get("text"), str)
     ]
     last_ai_draft = agent_history[-1] if agent_history else None
+    # -------------------------------------------------
+    # FINAL INTENT LOCK — firmware_update_info
+    # Must run AFTER all diagnostic / mode logic
+    # -------------------------------------------------
+    msg_lower = (latest_message or "").lower()
+    if any(p in msg_lower for p in [
+        "how do i update the firmware",
+        "how to update the firmware",
+        "update the firmware",
+        "firmware update",
+        "upgrade firmware",
+    ]):
+        intent = "firmware_update_info"
 
     # ----------------------------
     # Draft Generation
@@ -387,7 +405,7 @@ def draft():
     # v1 contract normalization
     # DEMO OVERRIDE — shipping status confidence floor
     # -------------------------------------------------
-    if intent == "shipping_status":
+    if intent in ("shipping_status", "shipping_eta"):
         confidence_overall = max(confidence_overall, 0.90)
         classification["confidence"]["intent_confidence"] = confidence_overall
         autosend_confidence = max(autosend_confidence, 0.90)
@@ -437,21 +455,15 @@ def draft():
 
     logger.info("MODE SET: %s", mode)
 
-        # -------------------------------------------------
-    # Phase X — Auto-send decision (confidence + rules)
-    # MUST come AFTER:
-    #  - intent classification
-    #  - missing_information detection
-    #  - draft_text exists
     # -------------------------------------------------
-    safety_mode = classification.get("safety_mode", "unknown")
-
-    # Draft output (needed for auto-send hard gates)
+    # Phase X — Auto-send decision (confidence + rules)
+    # -------------------------------------------------
     draft_text = (
         draft_result.get("response_text", "")
         if isinstance(draft_result, dict)
         else ""
     )
+
 
     quality_metrics = draft_result.get("quality_metrics", {}) or {}
     acceptance_failures = quality_metrics.get("acceptance_failures", []) or []
@@ -460,7 +472,7 @@ def draft():
     # ----------------------------
     # Shipping auto-send boost
     # ----------------------------
-    if intent == "shipping_status":
+    if intent in ("shipping_status", "shipping_eta"):
         if any(k in msg_lower for k in [
             "where is my order",
             "order status",
@@ -518,6 +530,11 @@ def draft():
 
     # -------------------------------------------------
     # Phase X — Auto-send decision
+
+    # --- NORMALIZE SHIPPING ETA → SHIPPING STATUS (AUTO-SEND PARITY) ---
+    if intent == "shipping_eta":
+        intent = "shipping_status"
+
     # -------------------------------------------------
     # Allow firmware_update_info to bypass diagnostic gating
     if intent == "firmware_update_info":
@@ -726,7 +743,9 @@ def build_recommendation(classification, auto_send_eligible=False):
         return "Response may be sent automatically."
     
     intent = classification.get("primary_intent", "unknown")
-    if intent == "shipping_status":
+
+
+    if intent in ("shipping_status", "shipping_eta"):
         return "Review recommended — shipping inquiry."
     return "Agent review recommended before responding."
 

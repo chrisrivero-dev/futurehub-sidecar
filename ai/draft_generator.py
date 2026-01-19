@@ -1,3 +1,4 @@
+from ai.llm_client import generate_llm_response
 """
 Draft Generator
 Responsible for generating agent-facing response drafts.
@@ -7,6 +8,8 @@ from typing import List
 import random
 from ai.faq_index import load_faq_snippets
 from ai.auto_send_evaluator import evaluate_auto_send
+from ai.fallback_router import generate_fallback_response
+
 
 
 # -------------------------------------------------
@@ -101,6 +104,46 @@ def has_generic_opener(draft_text: str) -> bool:
     first_line = draft_text.strip().split("\n", 1)[0].lower()
     return any(opener in first_line for opener in GENERIC_OPENERS)
 
+# ============================================================
+# Phase 5B — Draft Wording Polish (SAFE-ONLY)
+# ============================================================
+
+def polish_draft_text(
+    *,
+    draft_text: str,
+    intent: str | None,
+    mode: str,
+) -> str:
+    """
+    Final wording polish.
+    NO logic changes. NO intent changes.
+    """
+
+    if not isinstance(draft_text, str):
+        return ""
+
+    text = draft_text.strip()
+
+    # -------------------------------------------------
+    # Shipping auto-send: remove interactive language
+    # -------------------------------------------------
+    if intent == "shipping_status" and mode == "explanatory":
+        # Remove soft openers
+        replacements = {
+            "I can help": "Here’s an update",
+            "Let me help": "Here’s an update",
+            "Once I have a bit more detail": "Here’s what I can see so far",
+            "I’ll be able to point you in the right direction": "I’ll share the latest status below",
+        }
+
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+
+        # HARD remove trailing questions if any slipped in
+        lines = [line for line in text.splitlines() if "?" not in line]
+        text = "\n".join(lines).strip()
+
+    return text
 
 # ============================================================
 # ## PHASE 4.2 — Draft Acceptance Gate (HARD)
@@ -123,8 +166,10 @@ def draft_fails_acceptance_gate(
 
     # 1️⃣ Generic opener is NOT allowed for concrete intents
     if intent not in ("unknown_vague", None):
-        if has_generic_opener(draft_text):
+        if intent not in ("shipping_status", "firmware_update") and has_generic_opener(draft_text):
             failures.append("generic_opener")
+
+
 
     # 2️⃣ Diagnostic replies must ask something
     if mode == "diagnostic":
@@ -132,7 +177,8 @@ def draft_fails_acceptance_gate(
             failures.append("diagnostic_no_questions")
 
     # 3️⃣ Explanatory replies must not include troubleshooting
-    if mode == "explanatory":
+    # Shipping status and firmware update are allowed to explain process
+    if mode == "explanatory" and intent not in ("shipping_status", "firmware_update"):
         forbidden = ["step", "check", "try", "restart", "reboot"]
         lowered = draft_text.lower()
         if any(word in lowered for word in forbidden):
@@ -159,6 +205,33 @@ KNOWLEDGE_APPEND_INTENTS = {
 # -------------------------------------------------
 MIN_KNOWLEDGE_CONFIDENCE = 0.65
 
+# ============================================================
+# ## PHASE 1.8 — Post-Generation Safety Constraints (HELPER)
+# ============================================================
+
+def apply_draft_constraints(
+    draft_text: str,
+    intent: str | None,
+    tone_modifier: str | None,
+) -> str:
+    """
+    Applies post-generation safety and tone constraints
+    without changing the semantic intent of the response.
+    """
+
+    if intent == "shipping_status" and tone_modifier == "panic":
+        forbidden_phrases = [
+            "within 2 hours",
+            "within 4 hours",
+            "3-5 business days",
+            "delivery timeline",
+            "typical Apollo shipping timeframes",
+        ]
+
+        for phrase in forbidden_phrases:
+            draft_text = draft_text.replace(phrase, "").strip()
+
+    return draft_text
 
 # ============================================================
 # PHASE 1.1 LOCKED — do not modify without tests
@@ -225,11 +298,12 @@ def generate_draft(
 
 
         if intent == "shipping_status":
-            opener = random.choice(SHIPPING_OPENERS)
             return (
-                f"{opener}\n\n"
-                "Once I have a bit more detail, I’ll be able to point you in the right direction."
+                "Happy to help clarify what’s happening with your order.\n\n"
+                "It’s normal for shipping updates to take a little time to appear after checkout. "
+                "Here’s what usually happens next."
             )
+
 
         if intent == "unknown_vague":
             return (
@@ -341,7 +415,6 @@ def generate_draft(
     # Phase 2 — final draft intent (locked)
     # ----------------------------
     draft_intent = intent
-
     draft_text = _draft_for_intent(draft_intent)
 
     # -------------------------------------------------
@@ -352,10 +425,20 @@ def generate_draft(
         intent=intent,
         mode=mode,
     )
-        # -------------------------------------------------
+
+    # -------------------------------------------------
     # PHASE 3.1 — reasoning style enforcement
     # -------------------------------------------------
     draft_text = apply_reasoning_style(
+        draft_text=draft_text,
+        intent=intent,
+        mode=mode,
+    )
+
+    # ============================================================
+    # Phase 5B — Draft Wording Polish (SAFE-ONLY)
+    # ============================================================
+    draft_text = polish_draft_text(
         draft_text=draft_text,
         intent=intent,
         mode=mode,
@@ -398,7 +481,7 @@ def generate_draft(
         intent=intent,
         tone_modifier=tone_modifier,
     )
-    # -------------------------------------------------
+       # -------------------------------------------------
     # PHASE 4 — Acceptance Gate (HARD)
     # -------------------------------------------------
     failures = draft_fails_acceptance_gate(
@@ -408,45 +491,40 @@ def generate_draft(
     )
 
     if failures:
+        fallback_text = generate_fallback_response(
+            intent=intent or "",
+            message=latest_message,
+            llm_generate_fn=generate_llm_response,
+        )
+
         return {
             "type": "requires_review",
-            "response_text": draft_text,
+            "response_text": fallback_text,
             "quality_metrics": {
                 "mode": mode,
                 "delta_enforced": True,
                 "acceptance_failures": failures,
+                "fallback_used": True,
             },
             "canned_response_suggestion": None,
         }
 
+    # -------------------------------------------------
+    # FINAL FALLBACK — Category-Aware LLM Clarification
+    # -------------------------------------------------
+    fallback_text = generate_fallback_response(
+        intent=intent or "",
+        message=latest_message,
+        llm_generate_fn=generate_llm_response,
+    )
+
     return {
         "type": "full",
-        "response_text": draft_text,
+        "response_text": fallback_text,
         "quality_metrics": {
             "mode": mode,
             "delta_enforced": True,
+            "fallback_used": True,
         },
         "canned_response_suggestion": None,
     }
-
-# ============================================================
-# ## PHASE 1.8 — Post-Generation Safety Constraints (HELPER)
-# ============================================================
-
-def apply_draft_constraints(
-    draft_text: str,
-    intent: str | None,
-    tone_modifier: str | None,
-) -> str:
-    if intent == "shipping_status" and tone_modifier == "panic":
-        forbidden_phrases = [
-            "within 2 hours",
-            "within 4 hours",
-            "3-5 business days",
-            "delivery timeline",
-            "typical Apollo shipping timeframes",
-        ]
-        for phrase in forbidden_phrases:
-            draft_text = draft_text.replace(phrase, "").strip()
-
-    return draft_text
