@@ -134,7 +134,6 @@ def classify_auto_send(
 AUTO_SEND_ALLOWED_INTENTS = {
     "shipping_status",
     "firmware_update_info",
-    "firmware_update",
 }
 
 AUTO_SEND_MIN_CONFIDENCE = 0.85
@@ -152,20 +151,17 @@ def classify_auto_send(
 ) -> dict:
     """
     HARD deny-by-default auto-send classifier.
-    Contract:
-      Returns {
-        "auto_send": bool,
-        "auto_send_reason": str
-      }
+    DEMO-SAFE: deterministic, explainable.
     """
 
     acceptance_failures = acceptance_failures or []
     missing_information = missing_information or {}
 
     # ----------------------------
-    # Gate 1 — Acceptance gate MUST pass
+    # Gate 1 — Acceptance gate
+    # EXCEPT firmware_update_info (demo whitelist)
     # ----------------------------
-    if acceptance_failures:
+    if acceptance_failures and intent != "firmware_update_info":
         return {
             "auto_send": False,
             "auto_send_reason": "Blocked: acceptance gate failed",
@@ -181,15 +177,13 @@ def classify_auto_send(
         }
 
     # ----------------------------
-    # Safety mode check
-    # Allow SAFE + EXPLANATORY
+    # Gate 3 — Safety mode
     # ----------------------------
     if safety_mode not in ("safe", "explanatory"):
         return {
             "auto_send": False,
             "auto_send_reason": f"Blocked: safety_mode='{safety_mode}'",
         }
-
 
     # ----------------------------
     # Gate 4 — Confidence threshold
@@ -198,21 +192,23 @@ def classify_auto_send(
         return {
             "auto_send": False,
             "auto_send_reason": (
-                f"Blocked: confidence {intent_confidence:.2f} < {AUTO_SEND_MIN_CONFIDENCE:.2f}"
+                f"Blocked: confidence {intent_confidence:.2f} < "
+                f"{AUTO_SEND_MIN_CONFIDENCE:.2f}"
             ),
         }
 
     # ----------------------------
-    # Gate 5 — Questions are NOT allowed
+    # Gate 5 — Questions NOT allowed
+    # EXCEPT firmware_update_info
     # ----------------------------
-    if "?" in draft_text:
+    if "?" in draft_text and intent != "firmware_update_info":
         return {
             "auto_send": False,
             "auto_send_reason": "Blocked: draft contains question",
         }
 
     # ----------------------------
-    # Gate 6 — Diagnostic language NOT allowed
+    # Gate 6 — Diagnostic language block
     # ----------------------------
     forbidden_words = [
         "check",
@@ -225,18 +221,16 @@ def classify_auto_send(
     ]
 
     lowered = draft_text.lower()
-    if intent not in ("shipping_status",
-    "firmware_update_info", "firmware_update_info"):
+
+    if intent not in ("shipping_status", "firmware_update_info"):
         if any(word in lowered for word in forbidden_words):
             return {
                 "auto_send": False,
                 "auto_send_reason": "Blocked: diagnostic language detected",
             }
 
-
-
     # ----------------------------
-    # PASS — Auto-send allowed
+    # PASS — Auto-send eligible
     # ----------------------------
     return {
         "auto_send": True,

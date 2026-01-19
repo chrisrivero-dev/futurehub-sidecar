@@ -10,6 +10,7 @@ INTENTS = [
     "not_hashing",
     "sync_delay",
     "firmware_issue",
+    "firmware_update",
     "performance_issue",
     "warranty_rma",
     "general_question",
@@ -17,8 +18,21 @@ INTENTS = [
 ]
 
 # Safety classification
-SAFE_INTENTS = ["shipping_status", "setup_help", "general_question", "warranty_rma"]
-UNSAFE_INTENTS = ["not_hashing", "sync_delay", "firmware_issue", "performance_issue"]
+SAFE_INTENTS = [
+    "shipping_status",
+    "setup_help",
+    "firmware_update",   # ✅ SAFE + AUTO-SEND ELIGIBLE
+    "general_question",
+    "warranty_rma"
+]
+
+UNSAFE_INTENTS = [
+    "not_hashing",
+    "sync_delay",
+    "firmware_issue",
+    "performance_issue"
+]
+
 
 
 # Keyword definitions with weights
@@ -128,7 +142,7 @@ INTENT_KEYWORDS = {
             "stuck on boot"
         ],
         "strong_signals": [
-            "firmware", "update failed", "ui frozen",
+            "update failed", "ui frozen",
             "interface frozen", "unresponsive", "bricked",
             "won't start", "won't boot"
         ],

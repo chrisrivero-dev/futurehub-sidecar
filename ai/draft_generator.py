@@ -1,4 +1,6 @@
 from ai.llm_client import generate_llm_response
+from ai.auto_send_templates import AUTO_SEND_TEMPLATES
+
 """
 Draft Generator
 Responsible for generating agent-facing response drafts.
@@ -270,11 +272,26 @@ def generate_draft(
     print(">>> FINAL MODE:", mode)
     print(">>> FINAL INTENT:", intent)
 
-    # ============================================================
+     # ============================================================
     # ## PHASE 1.3 — Draft Differentiation by Intent (LOCAL HELPER, LOCKED)
     # ============================================================
+
     def _draft_for_intent(intent: str) -> str:
         print(">>> _draft_for_intent CALLED with intent =", intent)
+
+        # -------------------------------------------------
+        # AUTO-SEND TEMPLATE SHORT-CIRCUIT (HARD)
+        # -------------------------------------------------
+        if intent in AUTO_SEND_TEMPLATES:
+            print("🟢 AUTO-SEND TEMPLATE USED — LLM BYPASSED")
+            return AUTO_SEND_TEMPLATES[intent]
+
+        # -------------------------------------------------
+        # FALL THROUGH — normal draft logic continues below
+        # -------------------------------------------------
+        # (LLM or other logic happens AFTER this point)
+
+
 
         
         if intent == "setup_help":

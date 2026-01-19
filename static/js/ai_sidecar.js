@@ -329,7 +329,7 @@ class AISidecar {
       if (!response.ok) {
         throw new Error(
           (data && data.error && data.error.message) ||
-            "Failed to generate draft"
+            "Failed to generate draft",
         );
       }
 
@@ -339,7 +339,7 @@ class AISidecar {
       console.error("Draft error:", error);
       this.showToast(
         (error && error.message) || "Failed to generate draft",
-        "error"
+        "error",
       );
     } finally {
       if (this.generateBtn) {
@@ -420,7 +420,7 @@ class AISidecar {
     // 4. Draft Response
     this.renderDraft(
       data ? data.draft : null,
-      data ? data.agent_guidance : null
+      data ? data.agent_guidance : null,
     );
 
     // 5. Follow-up Questions (Phase 3.1)
@@ -519,7 +519,7 @@ class AISidecar {
     }
 
     const secondaryContainer = document.getElementById(
-      "secondary-intents-container"
+      "secondary-intents-container",
     );
     const secondaryEl = document.getElementById("secondary-intents");
 
@@ -532,7 +532,7 @@ class AISidecar {
       secondaryEl.innerHTML = classification.secondary_intents
         .map(
           (intent) =>
-            `<span class="intent-chip">${this.formatIntent(intent)}</span>`
+            `<span class="intent-chip">${this.formatIntent(intent)}</span>`,
         )
         .join("");
       secondaryContainer.classList.remove("hidden");
@@ -550,7 +550,7 @@ class AISidecar {
     }
 
     const actionsContainer = document.getElementById(
-      "attempted-actions-container"
+      "attempted-actions-container",
     );
     const actionsEl = document.getElementById("attempted-actions");
 
@@ -758,3 +758,23 @@ document.addEventListener("click", (e) => {
     ? "▼ Follow-up questions (optional)"
     : "▲ Follow-up questions (optional)";
 });
+// Canned Responses Dropdown — click-away close ONLY
+(function () {
+  const dropdownBtn = document.getElementById("canned-dropdown-btn");
+  const dropdownMenu = document.getElementById("canned-dropdown-menu");
+
+  if (!dropdownBtn || !dropdownMenu) return;
+
+  document.addEventListener("click", function (e) {
+    // If menu is closed, do nothing
+    if (dropdownMenu.classList.contains("hidden")) return;
+
+    // If click is inside the dropdown container, do nothing
+    const container = dropdownBtn.closest(".canned-dropdown");
+    if (container && container.contains(e.target)) return;
+
+    // Close dropdown
+    dropdownMenu.classList.add("hidden");
+    dropdownBtn.setAttribute("aria-expanded", "false");
+  });
+})();

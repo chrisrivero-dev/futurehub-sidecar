@@ -2,8 +2,7 @@
   "_comment": "Auto-send rules for FutureHub AI Sidecar. Edit safely without touching Python.",
 
   "min_confidence": 0.85,
-  "allowed_safety_modes": ["safe", "explanatory"]
-
+  "allowed_safety_modes": ["safe", "explanatory"],
 
   "intents": {
     "shipping_status": {
@@ -20,7 +19,22 @@
       ],
 
       "allow_phrase_override": true,
+      "required_missing_keys_blocking": []
+    },
 
+    "shipping_eta": {
+      "enabled": true,
+      "min_confidence": 0.85,
+
+      "phrases": [
+        "how long does shipping take",
+        "shipping time",
+        "shipping eta",
+        "when will my order ship",
+        "processing time"
+      ],
+
+      "allow_phrase_override": true,
       "required_missing_keys_blocking": []
     },
 
