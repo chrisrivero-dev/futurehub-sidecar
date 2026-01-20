@@ -1,15 +1,26 @@
-# Virtual environments
-venv/
-venv311/
-
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+
+# Virtual environments
+venv/
+venv311/
+
+# Databases (NEVER COMMIT)
+*.db
+*.sqlite
+*.sqlite3
+instance/
+ralph/instance/
 
 # OS files
 .DS_Store
 
-# Editor junk
+# IDE files
 .vscode/
 .idea/
+
+# Environment variables
+.env
