@@ -16,6 +16,8 @@
   --color-text-secondary: #374151;
   --color-text-muted: #6b7280;
   /* ===== Typography: Inter (Primary UI Font) ===== */
+
+  /* ===== Global Sidecar Font ===== */
   #ai-assistant-panel,
   #ai-assistant-panel * {
     font-family:
@@ -1829,4 +1831,97 @@ button[aria-expanded="true"] .dropdown-caret {
 
 .canned-dropdown-trigger[aria-expanded="true"] .dropdown-caret {
   transform: rotate(180deg) scale(1.1);
+}
+/* Collapse functionality */
+
+.sidecar-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sidecar-header:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Prevent hover bleed on reset */
+#reset-btn:hover {
+  background-color: transparent;
+}
+
+/* Controls wrapper */
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* True accordion-style upward collapse (slow, weighted) */
+.sidecar-content:not(.sidecar-header-track) {
+  overflow: hidden;
+
+  /* Motion physics — heavier accordion weight */
+  transition:
+    max-height 0.6s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 0.35s ease;
+
+  /* Expanded state */
+  max-height: 2000px;
+  opacity: 1;
+
+  /* Critical for “eating upward” effect */
+  transform-origin: top;
+  transform: scaleY(1);
+}
+
+/* Collapsed: content compresses upward into itself */
+.sidecar-collapsed .sidecar-content:not(.sidecar-header-track) {
+  max-height: 0;
+  opacity: 0;
+  transform: scaleY(0);
+  pointer-events: none;
+}
+
+/* Visual cue for collapsed state */
+.sidecar-collapsed .sidecar-header {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.sidecar-collapsed .sidecar-content:not(.sidecar-header-track) {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+
+/* Chevron */
+.collapse-chevron {
+  width: 16px;
+  height: 16px;
+  color: #6b7280;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.sidecar-collapsed .collapse-chevron {
+  transform: rotate(90deg); /* ▸ */
+}
+
+/* Updated indicator */
+.header-updated {
+  display: none;
+  margin-left: 8px;
+  font-size: 0.75rem;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.header-updated.visible {
+  display: inline;
+}
+
+/* Reset button isolation */
+#reset-btn {
+  position: relative;
+  z-index: 10;
 }

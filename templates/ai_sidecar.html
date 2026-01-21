@@ -18,35 +18,53 @@
     <!-- Header (kept in same place, but aligned to content track) -->
     <div class="sidecar-content sidecar-header-track">
       <header class="sidecar-header">
-        <div class="header-content">
-          <img
-            src="{{ url_for('static', filename='img/futurehub_logo_dark.png') }}"
-            alt="FutureHub"
-            class="header-logo"
-          />
-          <div class="header-text">
-            <h1>FH Assistant</h1>
-            <span class="header-version">v1.0</span>
-          </div>
-        </div>
+  <div class="header-content">
+    <img
+      src="{{ url_for('static', filename='img/futurehub_logo_dark.png') }}"
+      alt="FutureHub"
+      class="header-logo"
+    />
+    <div class="header-text">
+      <h1>FH Assistant</h1>
+      <span class="header-version">v1.0</span>
+      <span class="header-updated">• updated</span>
+    </div>
+  </div>
 
+  <div class="header-controls">
+    <svg
+      class="collapse-chevron"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <polyline points="4 6 8 10 12 6"></polyline>
+    </svg>
 
-          <button id="reset-btn" class="btn-icon" title="Reset">
-            <svg
-              class="icon"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-          </button>
-        </header>
+    <button id="reset-btn" class="btn-icon" title="Reset">
+  <svg
+    class="icon"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2"
+      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+    />
+  </svg>
+</button>
+
+  </div>
+</header>
+
 
         <!-- Scrollable Content -->
         <div class="sidecar-content">

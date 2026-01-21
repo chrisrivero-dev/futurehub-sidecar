@@ -778,3 +778,33 @@ document.addEventListener("click", (e) => {
     dropdownBtn.setAttribute("aria-expanded", "false");
   });
 })();
+// Collapse / expand functionality
+(function () {
+  const panel = document.getElementById("ai-assistant-panel");
+  if (!panel) return;
+
+  const header = panel.querySelector(".sidecar-header");
+  const indicator = panel.querySelector(".header-updated");
+
+  if (!header || !indicator) return;
+
+  let isCollapsed = false;
+
+  header.addEventListener("click", function (e) {
+    if (e.target.closest("#reset-btn")) return;
+
+    isCollapsed = !isCollapsed;
+    panel.classList.toggle("sidecar-collapsed", isCollapsed);
+
+    if (!isCollapsed) {
+      indicator.classList.remove("visible");
+    }
+  });
+
+  // Explicit hook for draft render completion
+  window.markSidecarUpdatedIfCollapsed = function () {
+    if (isCollapsed) {
+      indicator.classList.add("visible");
+    }
+  };
+})();
