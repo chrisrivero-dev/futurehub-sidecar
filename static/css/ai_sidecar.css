@@ -1904,7 +1904,7 @@ button[aria-expanded="true"] .dropdown-caret {
 }
 
 .sidecar-collapsed .collapse-chevron {
-  transform: rotate(90deg); /* ▸ */
+  transform: rotate(180deg); /* ▸ */
 }
 
 /* Updated indicator */
