@@ -498,7 +498,7 @@ def generate_draft(
         intent=intent,
         tone_modifier=tone_modifier,
     )
-       # -------------------------------------------------
+         # -------------------------------------------------
     # PHASE 4 — Acceptance Gate (HARD)
     # -------------------------------------------------
     failures = draft_fails_acceptance_gate(
@@ -506,13 +506,53 @@ def generate_draft(
         intent=intent,
         mode=mode,
     )
+        # -------------------------------------------------
+    # HARD FALLBACK: unknown intent → clarifying question
+    # -------------------------------------------------
+    if intent == "unknown_vague":
+        clarifying_system_prompt = (
+            "You are a calm, professional customer support agent. "
+            "The customer's request is unclear. "
+            "Ask ONE short, polite clarifying question. "
+            "Do not assume facts. Do not provide solutions yet."
+        )
+
+        fallback_text = generate_llm_response(
+            system_prompt=clarifying_system_prompt,
+            user_message=latest_message,
+        )
+
+        return {
+            "type": "full",
+            "response_text": fallback_text,
+            "quality_metrics": {
+                "mode": mode,
+                "delta_enforced": True,
+                "fallback_used": True,
+                "reason": "unknown_intent_clarification",
+            },
+            "canned_response_suggestion": None,
+        }
+
+
+        return {
+            "type": "full",
+            "response_text": fallback_text,
+            "quality_metrics": {
+                "mode": mode,
+                "delta_enforced": True,
+                "fallback_used": True,
+                "reason": "unknown_intent_llm_fallback",
+            },
+            "canned_response_suggestion": None,
+        }
 
     if failures:
-        fallback_text = generate_fallback_response(
-            intent=intent or "",
-            message=latest_message,
-            llm_generate_fn=generate_llm_response,
-        )
+        fallback_text = generate_llm_response(
+            system_prompt=system_prompt,
+            user_message=latest_message,
+    )
+
 
         return {
             "type": "requires_review",
@@ -527,8 +567,23 @@ def generate_draft(
         }
 
     # -------------------------------------------------
-    # FINAL FALLBACK — Category-Aware LLM Clarification
+    # FINAL OUTPUT
     # -------------------------------------------------
+
+    # If we have a valid draft, return it
+    if draft_text and draft_text.strip():
+        return {
+            "type": "full",
+            "response_text": draft_text,
+            "quality_metrics": {
+                "mode": mode,
+                "delta_enforced": True,
+                "fallback_used": False,
+            },
+            "canned_response_suggestion": None,
+        }
+
+    # Otherwise, use category-aware fallback
     fallback_text = generate_fallback_response(
         intent=intent or "",
         message=latest_message,
