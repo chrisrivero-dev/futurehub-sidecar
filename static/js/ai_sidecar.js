@@ -40,43 +40,73 @@ const CANNED_RESPONSES = {
   },
 };
 
-// -------------------------------------
-// Main AISidecar Class
-// -------------------------------------
 class AISidecar {
   constructor() {
+    this.panel = document.getElementById("ai-assistant-panel");
     this.form = document.getElementById("draft-request-form");
     this.emptyState = document.getElementById("empty-state");
     this.responseContainer = document.getElementById("response-container");
     this.generateBtn = document.getElementById("generate-btn");
     this.resetBtn = document.getElementById("reset-btn");
 
-    // Draft textarea (where inserts should go)
     this.draftTextarea =
       document.getElementById("draft-text") ||
       document.getElementById("draft-message-box");
 
-    // -----------------------------
-    // FOLLOW-UP QUESTIONS: HARD OFF BY DEFAULT
-    // -----------------------------
-    this.followupSection = document.getElementById("followup-section");
-    if (this.followupSection) {
-      this.followupSection.style.display = "none";
-    }
-
-    // Canned dropdown refs
     this.cannedBtn = document.getElementById("canned-dropdown-btn");
     this.cannedMenu = document.getElementById("canned-dropdown-menu");
 
-    // State
-    this.cannedResponses = [];
     this.recommendedCannedTitle = null;
+    this.cannedResponses = [];
 
-    // Wire base UI
     this.init();
-
-    // Load canned responses from JSON and render
+    this.bindCollapseToggle();
+    this.bindResetButton();
     this.loadCannedResponses();
+  }
+  // -----------------------------
+  // Reset Button
+  // -----------------------------
+  bindResetButton() {
+    if (!this.resetBtn) return;
+
+    this.resetBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+
+      this.form?.reset();
+      this.responseContainer?.classList.add("hidden");
+      this.emptyState?.classList.remove("hidden");
+      document.getElementById("auto-send-card")?.classList.add("hidden");
+
+      this.hideAutoSendCard();
+      this.showToast("Form cleared");
+    });
+  }
+
+  // -----------------------------
+  // Collapse / Expand
+  // -----------------------------
+  bindCollapseToggle() {
+    const toggleBtn = document.getElementById("collapse-toggle");
+    const wrapper = document.querySelector(".sidecar-wrapper");
+    if (!toggleBtn || !wrapper) return;
+
+    const chevron = toggleBtn.querySelector(".collapse-chevron");
+    let isCollapsed = false;
+
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+
+      isCollapsed = !isCollapsed;
+      wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
+      toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
+
+      if (chevron) {
+        chevron.style.transform = isCollapsed
+          ? "rotate(180deg)"
+          : "rotate(0deg)";
+      }
+    });
   }
 
   // -----------------------------
@@ -101,11 +131,6 @@ class AISidecar {
         console.log("🔥 generateDraft() click");
         this.generateDraft();
       });
-    }
-
-    // Reset button
-    if (this.resetBtn) {
-      this.resetBtn.addEventListener("click", () => this.reset());
     }
 
     // Copy draft
@@ -418,10 +443,16 @@ class AISidecar {
     this.renderIntent(data ? data.intent_classification : null);
 
     // 4. Draft Response
-    this.renderDraft(
-      data ? data.draft : null,
-      data ? data.agent_guidance : null,
-    );
+    if (data && data.draft) {
+      this.renderDraft(data.draft, data.agent_guidance);
+    } else {
+      console.warn("⚠️ No draft returned by backend", data);
+
+      this.showToast(
+        data?.reason || "No draft was generated for this request",
+        "warning",
+      );
+    }
 
     // 5. Follow-up Questions (Phase 3.1)
     const followups =
@@ -567,9 +598,6 @@ class AISidecar {
     }
   }
 
-  // -----------------------------
-  // Draft rendering
-  // -----------------------------
   renderDraft(draft, guidance) {
     console.log("RENDER DRAFT HIT", draft);
 
@@ -581,11 +609,11 @@ class AISidecar {
 
     let text = "";
 
-    // ✅ Case 1: Expected (string)
+    // ✅ CASE 1 — Expected legacy shape
     if (draft && typeof draft.response_text === "string") {
       text = draft.response_text;
 
-      // ✅ Case 2: Nested response_text (YOUR CURRENT SHAPE)
+      // ✅ CASE 2 — Nested legacy shape
     } else if (
       draft &&
       typeof draft.response_text === "object" &&
@@ -593,16 +621,20 @@ class AISidecar {
     ) {
       text = draft.response_text.response_text;
 
-      // ❌ Fallback (debug only)
+      // ✅ CASE 3 — NEW backend shape (FIX)
+    } else if (draft && typeof draft.text === "string") {
+      text = draft.text;
+
+      // ❌ Hard failure (debug only)
     } else {
-      console.warn("renderDraft: invalid draft payload", draft);
+      console.error("❌ renderDraft: invalid draft payload", draft);
       textarea.value = "";
       return;
     }
 
     textarea.value = text;
 
-    // Badge
+    // Badge logic (unchanged)
     const sourceBadge = document.getElementById("draft-source-badge");
     if (sourceBadge && guidance) {
       if (guidance.auto_send_eligible) {
@@ -736,13 +768,6 @@ class AISidecar {
   }
 }
 
-// -------------------------------------
-// Initialize on DOM Ready
-// -------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
-  window.aiSidecar = new AISidecar();
-});
-
 // ------------------------------------
 // Follow-up questions toggle (Phase 3.1)
 // ------------------------------------
@@ -758,7 +783,7 @@ document.addEventListener("click", (e) => {
     ? "▼ Follow-up questions (optional)"
     : "▲ Follow-up questions (optional)";
 });
-// Canned Responses Dropdown — click-away close ONLY
+/// Canned Responses Dropdown — click-away close ONLY
 (function () {
   const dropdownBtn = document.getElementById("canned-dropdown-btn");
   const dropdownMenu = document.getElementById("canned-dropdown-menu");
@@ -766,45 +791,22 @@ document.addEventListener("click", (e) => {
   if (!dropdownBtn || !dropdownMenu) return;
 
   document.addEventListener("click", function (e) {
-    // If menu is closed, do nothing
     if (dropdownMenu.classList.contains("hidden")) return;
 
-    // If click is inside the dropdown container, do nothing
     const container = dropdownBtn.closest(".canned-dropdown");
     if (container && container.contains(e.target)) return;
 
-    // Close dropdown
     dropdownMenu.classList.add("hidden");
     dropdownBtn.setAttribute("aria-expanded", "false");
   });
 })();
-// Collapse / expand functionality
-(function () {
-  const panel = document.getElementById("ai-assistant-panel");
-  if (!panel) return;
 
-  const header = panel.querySelector(".sidecar-header");
-  const indicator = panel.querySelector(".header-updated");
-
-  if (!header || !indicator) return;
-
-  let isCollapsed = false;
-
-  header.addEventListener("click", function (e) {
-    if (e.target.closest("#reset-btn")) return;
-
-    isCollapsed = !isCollapsed;
-    panel.classList.toggle("sidecar-collapsed", isCollapsed);
-
-    if (!isCollapsed) {
-      indicator.classList.remove("visible");
-    }
-  });
-
-  // Explicit hook for draft render completion
-  window.markSidecarUpdatedIfCollapsed = function () {
-    if (isCollapsed) {
-      indicator.classList.add("visible");
-    }
-  };
-})();
+// -------------------------------------
+// Initialize Sidecar (ONLY ONCE)
+// -------------------------------------
+document.addEventListener("DOMContentLoaded", () => {
+  window.aiSidecar = new AISidecar();
+});
+/* ================================
+   Sidecar Collapse (Header Toggle)
+   ================================ */

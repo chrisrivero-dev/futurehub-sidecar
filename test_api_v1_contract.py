@@ -11,7 +11,8 @@ from datetime import datetime
 
 # Import the Flask app
 sys.path.insert(0, '/home/claude')
-from app_v1 import app
+from app import app
+
 
 
 @pytest.fixture
@@ -939,6 +940,37 @@ def test_confidence_exactly_85_percent(client):
         # Other factors might still disqualify, but confidence alone doesn't
         pass  # Test passes if no error
 
+def test_shipping_intent_normalization(client):
+    payload = {
+        "subject": "shipping delay",
+        "latest_message": "it's been two weeks, where is my node?",
+        "conversation_history": [],
+    }
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v', '--tb=short'])
+    res = client.post("/api/v1/draft", json=payload)
+    assert res.status_code == 200
+
+    data = res.get_json()
+
+    # Freshdesk dropdown mapping
+    assert data["freshdesk"]["issue_type"] == "Shipping"
+
+    # Tag normalization
+    assert "shipping-delay" in data["freshdesk"]["tags"]
+
+    # Intent transparency
+    assert data["intent"]["normalized"] == "shipping_status"
+def test_shipping_subject_only_override(client):
+    payload = {
+        "subject": "Shipping",
+        "latest_message": "Any update?",
+        "conversation_history": [],
+    }
+
+    res = client.post("/api/v1/draft", json=payload)
+    assert res.status_code == 200
+
+    data = res.get_json()
+
+    assert data["freshdesk"]["issue_type"] == "Shipping"
+    assert data["intent"]["normalized"] == "shipping_status"

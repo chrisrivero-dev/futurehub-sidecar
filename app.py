@@ -7,724 +7,52 @@ from flask import Flask, request, jsonify
 from datetime import datetime
 import time
 import logging
-import os 
-
-logger = logging.getLogger(__name__)
+import os
 
 from intent_classifier import detect_intent
 from ai.draft_generator import generate_draft
-from flask import redirect
 from routes.sidecar_ui import sidecar_ui_bp
+from ai.intent_normalization import normalize_intent
 from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
+from dotenv import load_dotenv
 
-print(">>> evaluate_auto_send imported:", evaluate_auto_send)
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # -----------------------------------
-# LLM kill switch (Railway / Demo safe)
+# LLM kill switch
 # -----------------------------------
 def llm_allowed():
     return os.getenv("LLM_ENABLED", "false").lower() == "true"
 
 
-
 app = Flask(__name__)
+app.register_blueprint(sidecar_ui_bp)
+
 @app.route("/", methods=["GET", "HEAD"], endpoint="railway_root", provide_automatic_options=False)
 def railway_root():
     return "OK", 200
 
-app.register_blueprint(sidecar_ui_bp)
 
-
-# Payload size limits (v1.0 contract)
+# Payload limits
 MAX_SUBJECT_LENGTH = 500
 MAX_MESSAGE_LENGTH = 10000
 MAX_CONVERSATION_HISTORY = 50
 MAX_CUSTOMER_NAME_LENGTH = 100
 MAX_ATTACHMENTS = 10
-MAX_PAYLOAD_BYTES = 1048576  # 1MB
+MAX_PAYLOAD_BYTES = 1048576
 
 
+def error_response(code, message, status=400, details=None):
+    payload = {"success": False, "error": {"code": code, "message": message}}
+    if details:
+        payload["error"]["details"] = details
+    return jsonify(payload), status
 
 
-@app.route("/api/v1/draft", methods=["POST"])
-def draft():
-    """
-    Generate draft response for support ticket.
-    Conforms to v1.0 API contract.
-    """
-
-    autosend_confidence = 0.0
-    start_time = time.perf_counter()
-
-    # ----------------------------
-    # Parse JSON (KEEP THIS)
-    # ----------------------------
-    try:
-        data = request.get_json() or {}
-    except Exception:
-        return error_response(
-            code="malformed_json",
-            message="Request body must be valid JSON",
-            status=400,
-        )
-
-    # ----------------------------
-    # LLM kill switch (ADD THIS)
-    # ----------------------------
-    if not llm_allowed():
-        return jsonify({
-            "draft_available": False,
-            "reason": "LLM disabled",
-            "suggested_actions": ["Use approved canned response"],
-            "auto_send_eligible": False,
-            "confidence": 0.0,
-        }), 200
-
-
-    # ----------------------------
-    # REQUIRED INPUT NORMALIZATION
-    # ----------------------------
-    mode = str(data.get("mode") or "diagnostic")
-
-    latest_message = str(data.get("latest_message") or "").strip()
-    subject = str(data.get("subject") or "").strip()
-    conversation_history = data.get("conversation_history") or []
-
-    if not isinstance(conversation_history, list):
-        conversation_history = []
-
-
-
-    # 🔥 HARD CONTRACT ENFORCEMENT
-    if "message" in data:
-        return error_response(
-            code="invalid_input",
-            message="Field 'message' is not supported. Use 'latest_message' only.",
-            details={"invalid_field": "message"},
-            status=400,
-        )
-
-    if not data:
-        return error_response(
-            code="malformed_json",
-            message="Request body must be valid JSON",
-            status=400,
-        )
-
-    # ----------------------------
-    # Payload size
-    # ----------------------------
-    if request.content_length and request.content_length > MAX_PAYLOAD_BYTES:
-        return error_response(
-            code="payload_too_large",
-            message=f"Request exceeds maximum size of {MAX_PAYLOAD_BYTES} bytes",
-            details={
-                "request_size_bytes": request.content_length,
-                "max_size_bytes": MAX_PAYLOAD_BYTES,
-            },
-            status=400,
-        )
-
-    # ----------------------------
-    # Required fields
-    # ----------------------------
-    required_fields = ["subject", "latest_message", "conversation_history"]
-    missing = []
-
-    for field in required_fields:
-        if field not in data or data[field] is None:
-            missing.append(field)
-        elif field == "conversation_history" and not isinstance(data[field], list):
-            missing.append(field)
-
-    if missing:
-        return error_response(
-            code="invalid_input",
-            message=f"Missing or invalid required fields: {', '.join(missing)}",
-            details={
-                "missing_fields": missing,
-                "required_fields": required_fields,
-            },
-            status=400,
-        )
-
-    # ----------------------------
-    # Field length validation
-    # ----------------------------
-    if len(data["subject"]) > MAX_SUBJECT_LENGTH:
-        return error_response(
-            code="payload_too_large",
-            message=f"Field 'subject' exceeds maximum length of {MAX_SUBJECT_LENGTH} characters",
-            details={"field": "subject", "max_length": MAX_SUBJECT_LENGTH},
-            status=400,
-        )
-
-    if len(data["latest_message"]) > MAX_MESSAGE_LENGTH:
-        return error_response(
-            code="payload_too_large",
-            message=f"Field 'latest_message' exceeds maximum length of {MAX_MESSAGE_LENGTH} characters",
-            details={"field": "latest_message", "max_length": MAX_MESSAGE_LENGTH},
-            status=400,
-        )
-
-    # ----------------------------
-    # Conversation history
-    # ----------------------------
-    conversation_history = data["conversation_history"]
-
-    if len(conversation_history) > MAX_CONVERSATION_HISTORY:
-        return error_response(
-            code="payload_too_large",
-            message=f"conversation_history exceeds maximum of {MAX_CONVERSATION_HISTORY} messages",
-            details={
-                "field": "conversation_history",
-                "message_count": len(conversation_history),
-                "max_messages": MAX_CONVERSATION_HISTORY,
-            },
-            status=400,
-        )
-
-    for i, msg in enumerate(conversation_history):
-        if not isinstance(msg, dict):
-            return error_response(
-                code="invalid_input",
-                message=f"Message at index {i} must be an object",
-                details={"message_index": i},
-                status=400,
-            )
-
-        if msg.get("role") not in ["customer", "agent"]:
-            return error_response(
-                code="invalid_input",
-                message=f"Message at index {i} must have role 'customer' or 'agent'",
-                details={"message_index": i},
-                status=400,
-            )
-
-        if not isinstance(msg.get("text"), str):
-            return error_response(
-                code="invalid_input",
-                message=f"Message at index {i} must contain text",
-                details={"message_index": i},
-                status=400,
-            )
-
-        if len(msg["text"]) > MAX_MESSAGE_LENGTH:
-            return error_response(
-                code="payload_too_large",
-                message=f"Message text at index {i} exceeds maximum length",
-                details={"message_index": i, "max_length": MAX_MESSAGE_LENGTH},
-                status=400,
-            )
-
-
-    # ----------------------------
-    # Optional fields
-    # ----------------------------
-    customer_name = data.get("customer_name")
-    if customer_name and len(customer_name) > MAX_CUSTOMER_NAME_LENGTH:
-        return error_response(
-            code="payload_too_large",
-            message="Field 'customer_name' exceeds maximum length",
-            details={"field": "customer_name", "max_length": MAX_CUSTOMER_NAME_LENGTH},
-            status=400,
-        )
-
-    metadata = data.get("metadata", {})
-    if not isinstance(metadata, dict):
-        metadata = {}
-
-    attachments = metadata.get("attachments", [])
-    if not isinstance(attachments, list):
-        attachments = []
-
-    if len(attachments) > MAX_ATTACHMENTS:
-        return error_response(
-            code="payload_too_large",
-            message=f"Attachments exceed maximum of {MAX_ATTACHMENTS}",
-            details={"attachment_count": len(attachments), "max_attachments": MAX_ATTACHMENTS},
-            status=400,
-        )
-
-    classification_metadata = {
-        "order_number": metadata.get("order_number"),
-        "product": metadata.get("product"),
-        "attachments": attachments,
-    }
-    # ----------------------------
-    # Bind request inputs (ONCE)
-    # ----------------------------
-    data = request.get_json(force=True)
-
-    subject = data.get("subject", "")
-    latest_message = data.get("latest_message", "")
-    conversation_history = data.get("conversation_history", [])
-
-    # ----------------------------
-    # Intent Classification
-    # ----------------------------
-    classification = detect_intent(
-        latest_message,
-        subject,
-        metadata=classification_metadata,
-    )
-
-    # HARD SUBJECT OVERRIDE — firmware always wins
-    if subject == "firmware":
-        classification["primary_intent"] = "firmware_update_info"
-        classification["confidence"]["intent_confidence"] = 0.90
-        classification["confidence"]["ambiguity_detected"] = False
-
-    # -------------------------------------------------
-    # FINAL HARD INTENT OVERRIDE — firmware update
-    # Mirrors shipping auto-send behavior
-    # -------------------------------------------------
-    msg_lower = latest_message.lower()
-
-    if any(p in msg_lower for p in [
-        "how do i update the firmware",
-        "how to update the firmware",
-        "update the firmware",
-        "firmware update",
-        "upgrade firmware",
-    ]):
-        classification["primary_intent"] = "firmware_update_info"
-        classification["confidence"]["intent_confidence"] = 0.90
-        classification["confidence"]["ambiguity_detected"] = False
-        classification["safety_mode"] = "safe"
-            # ----------------------------
-    # Firmware informational auto-send (STRICT)
-    # ----------------------------
-    FIRMWARE_INFO_PHRASES = [
-        "how do i update the firmware",
-        "how to update the firmware",
-        "update the firmware",
-        "firmware update",
-        "upgrade firmware",
-    ]
-
-    DIAGNOSTIC_PHRASES = [
-        "not working",
-        "error",
-        "stuck",
-        "failed",
-        "won't",
-        "cant",
-        "can't",
-        "issue",
-        "problem",
-    ]
-
-    msg_lower = (latest_message or "").lower()
-
-    if (
-        any(p in msg_lower for p in FIRMWARE_INFO_PHRASES)
-        and not any(d in msg_lower for d in DIAGNOSTIC_PHRASES)
-    ):
-        intent = "firmware_update_info"
-        safety_mode = "safe"
-        autosend_confidence = max(autosend_confidence, 0.90)
-
-
-    # -------------------------------------------------
-    # Auto-send confidence baseline
-    # -------------------------------------------------
-    autosend_confidence = float(
-        classification.get("confidence", {}).get("intent_confidence", 0.0)
-    )
-
-    # -------------------------------------------------
-    # HARD INTENT OVERRIDE — firmware update
-    # Mirrors shipping override behavior
-    # -------------------------------------------------
-    msg_lower = (latest_message or "").lower()
-
-    if any(p in msg_lower for p in [
-        "how do i update the firmware",
-        "how to update the firmware",
-        "update the firmware",
-        "firmware update",
-        "upgrade firmware",
-    ]):
-        classification = {
-            "primary_intent": "firmware_update_info",
-            "secondary_intents": [],
-            "confidence": {
-                "intent_confidence": 0.90,
-                "ambiguity_detected": False,
-            },
-            "safety_mode": "safe",
-            "tone_modifier": "neutral",
-            "device_behavior_detected": False,
-            "attempted_actions": [],
-            "scores": {},
-        }
-
-        # 🔒 LOCK confidence so auto-send cannot regress
-        autosend_confidence = 0.90
-
-    
-
-    # ----------------------------
-    # Context for draft generation
-    # ----------------------------
-    intent = classification["primary_intent"]
-    safety_mode = classification["safety_mode"]
-    latest_message = data["latest_message"]
-
-    # Pull prior agent messages (including previous AI drafts)
-    agent_history = [
-        m["text"]
-        for m in conversation_history
-        if m.get("role") == "agent" and isinstance(m.get("text"), str)
-    ]
-    last_ai_draft = agent_history[-1] if agent_history else None
-    # -------------------------------------------------
-    # FINAL INTENT LOCK — firmware_update_info
-    # Must run AFTER all diagnostic / mode logic
-    # -------------------------------------------------
-    msg_lower = (latest_message or "").lower()
-    if any(p in msg_lower for p in [
-        "how do i update the firmware",
-        "how to update the firmware",
-        "update the firmware",
-        "firmware update",
-        "upgrade firmware",
-    ]):
-        intent = "firmware_update_info"
-
-    # ----------------------------
-    # Draft Generation
-    # ----------------------------
-    draft_text = generate_draft(
-        latest_message=latest_message,
-        intent=intent,
-        prior_draft=last_ai_draft,
-        prior_agent_messages=agent_history,
-    )
-
-    # Normalize into the shape the rest of this file expects
-    draft_result = {
-        "type": "full",
-        "response_text": draft_text,
-        "quality_metrics": {},
-    }
-    canned_response_suggestion = draft_result.get("canned_response_suggestion")
-    
-
-    # ----------------------------
-    # Timing
-    # ----------------------------
-    processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
-
-    # Base confidence from classifier
-    confidence_overall = classification["confidence"]["intent_confidence"]
-        # -------------------------------------------------
-    # Auto-send confidence BASELINE (MUST EXIST BEFORE ANY BOOSTS)
-    # -------------------------------------------------
-    autosend_confidence = float(confidence_overall or 0.0)
-    msg_lower = (latest_message or "").lower()
-
-    # -------------------------------------------------
-    # v1 contract normalization
-    # DEMO OVERRIDE — shipping status confidence floor
-    # -------------------------------------------------
-    if intent in ("shipping_status", "shipping_eta"):
-        confidence_overall = max(confidence_overall, 0.90)
-        classification["confidence"]["intent_confidence"] = confidence_overall
-        autosend_confidence = max(autosend_confidence, 0.90)
-
-
-    # CRITICAL: sync back into classification for auto-send logic
-    classification["confidence"]["intent_confidence"] = confidence_overall
-        # -------------------------------------------------
-    # Phase X.1 — Freeze auto-send inputs (INVARIANT)
-    # Auto-send must NOT be affected by draft polish
-    # -------------------------------------------------
-    auto_send_context = {
-        "intent": intent,
-        "mode": draft_result["quality_metrics"].get("mode"),
-        "confidence": confidence_overall,
-        "acceptance_failures": (
-            draft_result["quality_metrics"].get("acceptance_failures") or []
-        ),
-    }
-
-
-    # -------------------------------------------------
-    # Build last_customer_messages (delta-only rule)
-    # -------------------------------------------------
-    last_customer_messages = [
-        m["text"]
-        for m in conversation_history
-        if isinstance(m, dict)
-        and m.get("role") == "customer"
-        and isinstance(m.get("text"), str)
-    ][-2:]
-
-    logger.info("DELTA_ONLY last_customer_messages=%s", last_customer_messages)
-
-    # -------------------------------------------------
-    # Phase 2.1a — Missing Information (Observation Only)
-    # -------------------------------------------------
-    missing_information = detect_missing_information(
-        messages=last_customer_messages,
-        intent={
-            "primary": classification["primary_intent"],
-            "confidence": confidence_overall,
-        },
-        mode=mode,
-        metadata=classification_metadata,
-    )
-
-    logger.info("MODE SET: %s", mode)
-
-    # -------------------------------------------------
-    # Phase X — Auto-send decision (confidence + rules)
-    # -------------------------------------------------
-    draft_text = (
-        draft_result.get("response_text", "")
-        if isinstance(draft_result, dict)
-        else ""
-    )
-
-
-    quality_metrics = draft_result.get("quality_metrics", {}) or {}
-    acceptance_failures = quality_metrics.get("acceptance_failures", []) or []
-
-
-    # ----------------------------
-    # Shipping auto-send boost
-    # ----------------------------
-    if intent in ("shipping_status", "shipping_eta"):
-        if any(k in msg_lower for k in [
-            "where is my order",
-            "order status",
-            "tracking",
-            "shipment",
-            "shipping",
-        ]):
-            autosend_confidence = max(autosend_confidence, 0.90)
-
-    # ----------------------------
-    # Firmware informational auto-send (STRICT)
-    # ----------------------------
-    FIRMWARE_INFO_PHRASES = [
-        "how do i update the firmware",
-        "how to update the firmware",
-        "update the firmware",
-        "firmware update",
-        "upgrade firmware",
-    ]
-
-    DIAGNOSTIC_PHRASES = [
-        "not working",
-        "error",
-        "stuck",
-        "failed",
-        "won't",
-        "cant",
-        "can't",
-        "issue",
-        "problem",
-    ]
-
-    if any(p in msg_lower for p in FIRMWARE_INFO_PHRASES) and not any(
-        d in msg_lower for d in DIAGNOSTIC_PHRASES
-    ):
-        intent = "firmware_update_info"
-        safety_mode = "safe"
-        autosend_confidence = max(autosend_confidence, 0.90)
-
-
-    # ----------------------------
-    # Firmware auto-send boost (MIRROR shipping)
-    # ----------------------------
-    if any(p in msg_lower for p in [
-        "how do i update the firmware",
-        "how to update the firmware",
-        "update the firmware",
-        "firmware update",
-        "upgrade firmware",
-    ]):
-        intent = "firmware_update"
-        safety_mode = "safe"
-        autosend_confidence = max(autosend_confidence, 0.90)
-
-        # -------------------------------------------------
-    # DEFAULT auto-send result (deny-by-default)
-    # MUST exist for all execution paths
-    # -------------------------------------------------
-    auto_send_result = {
-        "auto_send": False,
-        "auto_send_reason": "Not evaluated",
-    }
-
-    # -------------------------------------------------
-    # Phase X — Auto-send decision
-    # -------------------------------------------------
-
-    # --- NORMALIZE SHIPPING ETA → SHIPPING STATUS (AUTO-SEND PARITY) ---
-    if intent == "shipping_eta":
-        intent = "shipping_status"
-
-    # -------------------------------------------------
-    # FINAL ACCEPTANCE OVERRIDE (DEMO-SAFE)
-    # -------------------------------------------------
-    if intent == "firmware_update":
-        intent = "firmware_update_info"
-
-
-    # -------------------------------------------------
-    # HARD WHITELIST — firmware_update_info auto-send
-    # Must override diagnostic blockers
-    # -------------------------------------------------
-    if intent == "firmware_update_info":
-        auto_send_result = {
-            "auto_send": True,
-            "auto_send_reason": "Whitelisted: firmware informational request",
-        }
-    else:
-        auto_send_result = evaluate_auto_send(
-            message=latest_message or "",
-            intent=intent,
-            intent_confidence=autosend_confidence,
-            safety_mode=safety_mode,
-            draft_text=draft_text,
-            acceptance_failures=acceptance_failures,
-            missing_information=missing_information,
-        )
-
-    # -------------------------------------------------
-    # Auto-send debug logging (DEMO GOLD)
-    # -------------------------------------------------
-    logger.info(
-        "AUTO_SEND_RESULT raw=%s safety_mode=%s intent=%s mode=%s autosend_confidence=%.2f",
-        auto_send_result,
-        safety_mode,
-        intent,
-        mode,
-        autosend_confidence,
-    )
-
-    # -------------------------------------------------
-    # Normalize auto-send fields for UI
-    # -------------------------------------------------
-    auto_send = bool(auto_send_result.get("auto_send", False))
-    auto_send_reason = str(auto_send_result.get("auto_send_reason", ""))
-
-    logger.info(
-        "AUTO_SEND_DECISION intent=%s cls_conf=%.2f used_conf=%.2f auto_send=%s reason=%s",
-        intent,
-        float(confidence_overall or 0.0),
-        float(autosend_confidence or 0.0),
-        auto_send,
-        auto_send_reason,
-    )
-
-
-        # ----------------------------
-    # Response
-    # ----------------------------
-    response = {
-        "success": True,
-        "draft_available": True,
-        "version": "1.0",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "processing_time_ms": processing_time_ms,
-        "intent_classification": {
-            "primary_intent": classification["primary_intent"],
-            "secondary_intents": classification["secondary_intents"],
-            "confidence": {
-                "overall": confidence_overall,
-                "dimensions": {
-                    "intent_confidence": confidence_overall,
-                },
-                "label": get_confidence_label(confidence_overall),
-                "ambiguity_detected": classification["confidence"]["ambiguity_detected"],
-            },
-            "safety_mode": classification["safety_mode"],
-            "tone_modifier": classification["tone_modifier"],
-            "device_behavior_detected": classification["device_behavior_detected"],
-            "attempted_actions": classification["attempted_actions"],
-            "signal_breakdown": classification["scores"],
-            "classification_reasoning": (
-                f"Intent detected as {classification['primary_intent']} "
-                "based on keyword analysis"
-            ),
-        },
-        "draft": {
-            "type": draft_result["type"],
-            "response_text": draft_result["response_text"],
-            "quality_metrics": draft_result["quality_metrics"],
-        },
-
-        # -------------------------------------------------
-        # Auto-send UI signal (REQUIRED for badge)
-        # -------------------------------------------------
-        "auto_send": bool(auto_send),
-        "auto_send_reason": str(auto_send_reason),
-
-        # -------------------------------------------------
-        # Knowledge (stubbed)
-        # -------------------------------------------------
-        "knowledge_retrieval": {
-            "sources_consulted": [],
-            "coverage": "none",
-            "gaps": ["Knowledge retrieval not yet implemented"],
-        },
-
-        # -------------------------------------------------
-        # Agent guidance (derived from auto-send)
-        # -------------------------------------------------
-        "agent_guidance": {
-            "auto_send_eligible": bool(auto_send),
-            "requires_review": not bool(auto_send),
-            "reason": str(auto_send_reason) or build_reason(classification, bool(auto_send)),
-            "recommendation": build_recommendation(classification, bool(auto_send)),
-            "suggested_actions": build_suggested_actions(classification),
-        },
-
-        # -------------------------------------------------
-        # Missing information
-        # -------------------------------------------------
-        "missing_information": missing_information,
-    }
-
-    # -------------------------------------------------
-    # Add canned response suggestion if available
-    # -------------------------------------------------
-    if canned_response_suggestion:
-        response["agent_guidance"]["canned_response_suggestion"] = canned_response_suggestion
-
-        # -------------------------------------------------
-    # Missing information logging (SIDE EFFECT ONLY)
-    # -------------------------------------------------
-    logger.info(
-        "missing_information_observed",
-        extra={
-            "primary_intent": classification["primary_intent"],
-            "intent_confidence": confidence_overall,
-            "mode": mode,
-            "blocking_count": missing_information.get("summary", {}).get("blocking_count", 0),
-            "missing_keys": [
-                item["key"]
-                for item in (missing_information.get("items", []) or [])
-                if isinstance(item, dict) and "key" in item
-            ],
-        },
-    )
-
-    # -------------------------------------------------
-    # FINAL RESPONSE (MUST BE INSIDE draft())
-    # -------------------------------------------------
-    return jsonify(response), 200
-
-
-
-def get_confidence_label(confidence):
-    """Convert confidence score to label"""
+def get_confidence_label(confidence: float) -> str:
     if confidence >= 0.85:
         return "high"
     if confidence >= 0.70:
@@ -734,139 +62,179 @@ def get_confidence_label(confidence):
     return "very_low"
 
 
-def build_reason(classification, auto_send_eligible):
-    """
-    Human-readable explanation for agent guidance.
-    Must satisfy v1.0 contract expectations.
-    """
-    intent = classification.get("primary_intent")
-    safety_mode = classification.get("safety_mode")
-  
-    print("BUILD_REASON → intent:", intent, "safety_mode:", safety_mode)
+@app.route("/api/v1/draft", methods=["POST"])
+def draft():
+    start_time = time.perf_counter()
+    autosend_confidence = 0.0
 
-    if auto_send_eligible:
-        return (
-            f"High-confidence {intent} request meets auto-send criteria "
-            "and does not require agent review."
-        )
+    try:
+        data = request.get_json() or {}
+    except Exception:
+        return error_response("malformed_json", "Request body must be valid JSON")
 
-    if safety_mode == "unsafe":
-        return (
-            f"Diagnostic intent '{intent}' requires human review "
-            "before any response is sent."
-        )
+    if not llm_allowed():
+        return jsonify({
+            "draft_available": False,
+            "reason": "LLM disabled",
+            "auto_send_eligible": False,
+            "confidence": 0.0,
+        }), 200
 
-    return (
-        f"Intent '{intent}' does not meet auto-send criteria "
-        "and requires agent review."
-    )
+    subject = str(data.get("subject") or "").strip()
+    latest_message = str(data.get("latest_message") or "").strip()
+    conversation_history = data.get("conversation_history") or []
 
+    if not subject or not latest_message:
+        return error_response("invalid_input", "subject and latest_message are required")
 
+    metadata = data.get("metadata") or {}
+    attachments = metadata.get("attachments") or []
 
-def build_recommendation(classification, auto_send_eligible=False):
-    """
-    Provide agent-facing recommendation text.
-    This function must not imply review when auto-send is allowed.
-    """
-    if auto_send_eligible:
-        return "Response may be sent automatically."
-    
-    intent = classification.get("primary_intent", "unknown")
-
-
-    if intent in ("shipping_status", "shipping_eta"):
-        return "Review recommended — shipping inquiry."
-    return "Agent review recommended before responding."
-
-
-def build_suggested_actions(classification):
-    """Build suggested actions list based on classification"""
-    intent = classification["primary_intent"]
-
-    actions_map = {
-        "not_hashing": [
-            "Request debug.log and getblockchaininfo output",
-            "Review logs for error patterns",
-            "Consider: Node Not Hashing Troubleshooting canned response",
-        ],
-        "sync_delay": [
-            "Request getblockchaininfo output",
-            "Check if blocks are incrementing",
-            "Consider: Node Sync Troubleshooting canned response",
-        ],
-        "firmware_issue": [
-            "Request firmware version and update logs",
-            "Do NOT provide recovery steps",
-            "Escalate to engineering if device bricked",
-        ],
-        "performance_issue": [
-            "Request description of restart pattern",
-            "Check temperature and fan status",
-            "Request debug.log if persistent",
-        ],
-        "shipping_status": [
-            "Look up order in admin system",
-            "Provide accurate tracking information",
-            "Set realistic delivery expectations",
-        ],
-        "setup_help": [
-            "Provide step-by-step setup instructions",
-            "Confirm device is brand new",
-            "Reference setup documentation",
-        ],
-        "warranty_rma": [
-            "Explain RMA process at high level",
-            "Do NOT guarantee refund or replacement",
-            "Check warranty coverage in system",
-        ],
-        "general_question": [
-            "Provide educational explanation",
-            "Use neutral, informative tone",
-            "Reference documentation if available",
-        ],
-        "unknown_vague": [
-            "Ask clarifying questions",
-            "Use multiple-choice format if possible",
-            "Be patient and helpful",
-        ],
-    }
-
-    return actions_map.get(intent, ["Review customer message", "Provide appropriate response"])
-
-
-def error_response(code, message, details=None, status=400):
-    """Build standardized error response"""
-    error_obj = {
-        "success": False,
-        "error": {
-            "code": code,
-            "message": message,
+    classification = detect_intent(
+        latest_message,
+        subject,
+        metadata={
+            "order_number": metadata.get("order_number"),
+            "product": metadata.get("product"),
+            "attachments": attachments,
         },
+    )
+
+    # Shipping override
+    combined = f"{subject} {latest_message}".lower()
+    if any(k in combined for k in ["shipping", "order", "tracking", "where is my"]):
+        classification["primary_intent"] = "shipping_status"
+        classification["confidence"]["intent_confidence"] = 0.90
+        classification["confidence"]["ambiguity_detected"] = False
+
+    normalized = normalize_intent(
+        primary=classification["primary_intent"],
+        secondary=classification.get("secondary_intent"),
+    )
+
+    intent = normalized["normalized_intent"]
+    issue_type = normalized["issue_type"]
+    tags = normalized["tags"]
+
+    agent_history = [
+        m["text"]
+        for m in conversation_history
+        if isinstance(m, dict) and m.get("role") == "agent"
+    ]
+    last_ai_draft = agent_history[-1] if agent_history else None
+
+    # ----------------------------
+    # Draft generation
+    # ----------------------------
+    draft_output = generate_draft(
+        latest_message=latest_message,
+        intent=intent,
+        prior_draft=last_ai_draft,
+        prior_agent_messages=agent_history,
+    )
+
+    if isinstance(draft_output, dict):
+        draft_result = draft_output
+    else:
+        draft_result = {
+            "type": "full",
+            "response_text": str(draft_output),
+            "quality_metrics": {
+                "mode": "diagnostic",
+                "delta_enforced": True,
+                "fallback_used": False,
+            },
+            "canned_response_suggestion": None,
+        }
+
+    draft_text = draft_result.get("response_text", "")
+
+    customer_name = data.get("customer_name")
+    if customer_name and customer_name not in draft_text:
+        draft_text = f"{customer_name}, {draft_text}"
+        draft_result["response_text"] = draft_text
+
+    confidence_overall = classification["confidence"]["intent_confidence"]
+    autosend_confidence = confidence_overall
+
+    # Missing info detection
+    last_customer_messages = [
+        m["text"]
+        for m in conversation_history
+        if isinstance(m, dict) and m.get("role") == "customer"
+    ][-2:]
+
+    missing_information = detect_missing_information(
+        messages=last_customer_messages,
+        intent={
+            "primary": classification["primary_intent"],
+            "confidence": confidence_overall,
+        },
+        mode="diagnostic",
+        metadata=metadata,
+    )
+    # -------------------------------------------------
+    # Safety mode — guaranteed definition
+    # -------------------------------------------------
+    safety_mode = classification.get("safety_mode")
+
+    if not safety_mode:
+        if intent in ("shipping_status", "shipping_eta", "firmware_update_info"):
+            safety_mode = "safe"
+        else:
+            safety_mode = "review_required"
+
+
+    # ----------------------------
+    # Auto-send evaluation (FIXED SIGNATURE)
+    # ----------------------------
+    auto_send_result = evaluate_auto_send(
+         message=latest_message,
+        intent=intent,
+        intent_confidence=autosend_confidence,
+        safety_mode=safety_mode,
+        draft_text=draft_result,
+        acceptance_failures=draft_result.get("quality_metrics", {}).get("acceptance_failures", []),
+        missing_information=missing_information,
+    )
+
+
+    processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
+
+    response = {
+        "success": True,
+        "version": "1.0",
         "timestamp": datetime.utcnow().isoformat() + "Z",
+        "processing_time_ms": processing_time_ms,
+        "intent_classification": {
+            "primary_intent": classification["primary_intent"],
+            "confidence": {
+                "overall": confidence_overall,
+                "label": get_confidence_label(confidence_overall),
+                "ambiguity_detected": classification["confidence"]["ambiguity_detected"],
+            },
+            "safety_mode": classification.get("safety_mode"),
+        },
+        "draft": {
+            "type": draft_result["type"],
+            "response_text": draft_result["response_text"],
+        },
+        "auto_send": bool(auto_send_result.get("auto_send")),
+        "auto_send_reason": auto_send_result.get("auto_send_reason"),
+        "agent_guidance": {
+            "auto_send_eligible": bool(auto_send_result.get("auto_send")),
+            "requires_review": not bool(auto_send_result.get("auto_send")),
+            "reason": auto_send_result.get("auto_send_reason"),
+        },
+        "freshdesk": {
+            "issue_type": issue_type,
+            "product": metadata.get("product") or "other",
+            "tags": tags,
+        },
     }
 
-    if details:
-        error_obj["error"]["details"] = details
-
-    return jsonify(error_obj), status
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    """Health check endpoint"""
-    return (
-        jsonify(
-            {
-                "status": "healthy",
-                "version": "1.0",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            }
-        ),
-        200,
-    )
+    return jsonify(response), 200
 
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True, port=5000)

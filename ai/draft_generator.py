@@ -534,25 +534,14 @@ def generate_draft(
             "canned_response_suggestion": None,
         }
 
-
-        return {
-            "type": "full",
-            "response_text": fallback_text,
-            "quality_metrics": {
-                "mode": mode,
-                "delta_enforced": True,
-                "fallback_used": True,
-                "reason": "unknown_intent_llm_fallback",
-            },
-            "canned_response_suggestion": None,
-        }
-
     if failures:
         fallback_text = generate_llm_response(
-            system_prompt=system_prompt,
+            system_prompt=(
+                "You are a helpful customer support assistant. "
+                "Respond clearly, accurately, and concisely."
+            ),
             user_message=latest_message,
-    )
-
+        )
 
         return {
             "type": "requires_review",
@@ -566,12 +555,21 @@ def generate_draft(
             "canned_response_suggestion": None,
         }
 
-    # -------------------------------------------------
-    # FINAL OUTPUT
-    # -------------------------------------------------
+    # ---------------------------------------------
+    # Unknown / fallback intent — safe LLM response
+    # ---------------------------------------------
+    fallback_text = generate_llm_response(
+        system_prompt=(
+            "You are a helpful customer support assistant. "
+            "Respond clearly, accurately, and concisely."
+        ),
+        user_message=latest_message,
+    )
+    # ---------------------------------------------
+    # FINAL OUTPUT — SINGLE EXIT (REQUIRED)
+    # ---------------------------------------------
 
-    # If we have a valid draft, return it
-    if draft_text and draft_text.strip():
+    if draft_text and isinstance(draft_text, str) and draft_text.strip():
         return {
             "type": "full",
             "response_text": draft_text,
@@ -583,13 +581,7 @@ def generate_draft(
             "canned_response_suggestion": None,
         }
 
-    # Otherwise, use category-aware fallback
-    fallback_text = generate_fallback_response(
-        intent=intent or "",
-        message=latest_message,
-        llm_generate_fn=generate_llm_response,
-    )
-
+    # Otherwise, fallback
     return {
         "type": "full",
         "response_text": fallback_text,
@@ -597,6 +589,7 @@ def generate_draft(
             "mode": mode,
             "delta_enforced": True,
             "fallback_used": True,
+            "reason": "unknown_intent_llm_fallback",
         },
         "canned_response_suggestion": None,
     }

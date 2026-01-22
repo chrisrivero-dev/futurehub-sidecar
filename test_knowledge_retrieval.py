@@ -1,8 +1,18 @@
+import pytest
+pytest.skip("Knowledge retrieval not enabled in v1", allow_module_level=True)
+
 """
 Test Knowledge Retrieval (Phase 4A.1)
 Comprehensive tests for knowledge modules
+
+NOTE:
+This test suite is intentionally skipped in v1.
+It will be enabled in Phase 4 when:
+- chromadb is installed
+- vector store is wired
+- knowledge retrieval is active
 """
-import pytest
+
 import sys
 import os
 import tempfile

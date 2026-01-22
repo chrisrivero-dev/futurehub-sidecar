@@ -3,35 +3,22 @@
 
 /* ===== Enhanced CSS Variables ===== */
 :root {
-  /* Colors - Stronger contrast */
+  /* Colors */
   --color-primary: #2563eb;
   --color-primary-hover: #1d4ed8;
   --color-success: #059669;
   --color-warning: #d97706;
   --color-danger: #dc2626;
+
   --color-border: #e5e7eb;
   --color-bg: #f9fafb;
   --color-surface: #ffffff;
+
   --color-text: #111827;
   --color-text-secondary: #374151;
   --color-text-muted: #6b7280;
-  /* ===== Typography: Inter (Primary UI Font) ===== */
 
-  /* ===== Global Sidecar Font ===== */
-  #ai-assistant-panel,
-  #ai-assistant-panel * {
-    font-family:
-      "Inter",
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      Roboto,
-      Helvetica,
-      Arial,
-      sans-serif;
-  }
-
-  /* Typography - Larger, bolder scale */
+  /* Typography */
   --font-size-base: 14px;
   --font-size-sm: 13px;
   --font-size-xs: 12px;
@@ -39,24 +26,24 @@
   --font-size-xl: 18px;
   --font-size-2xl: 20px;
 
-  /* Spacing - More generous */
+  /* Spacing */
   --spacing-xs: 8px;
   --spacing-sm: 12px;
   --spacing-md: 16px;
   --spacing-lg: 24px;
   --spacing-xl: 32px;
 
-  /* Visual weight */
+  /* Font weight */
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
 
-  /* Borders & Radius */
+  /* Radius */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
 
-  /* Shadows - Subtle depth */
+  /* Shadows */
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
@@ -68,8 +55,21 @@ body {
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
 }
+/* ===== Global Sidecar Font ===== */
+#ai-assistant-panel,
+#ai-assistant-panel * {
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}
 
-/* ===== Section Cards — Unified Stack (Embedded Sidecar) ===== */
+/* ===== Section Cards â€” Unified Stack (Embedded Sidecar) ===== */
 .section-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -93,7 +93,7 @@ body {
   box-shadow: var(--shadow-card-hover);
 }
 /* ===============================
-   Sidecar Header — SINGLE SOURCE OF TRUTH
+   Sidecar Header â€” SINGLE SOURCE OF TRUTH
    =============================== */
 
 .sidecar-header .header-content {
@@ -138,7 +138,7 @@ body {
   margin-bottom: 0;
 }
 /* ===============================
-   Sidecar Header — AidKit-style
+   Sidecar Header â€” AidKit-style
    =============================== */
 
 /* ===== Form Group Layout (Center Inputs, Keep Text Readable) ===== */
@@ -332,7 +332,7 @@ guidance-card {
   color: var(--color-text-secondary);
 }
 
-/* ===== Metrics — FINAL, CORRECT STRUCTURE ===== */
+/* ===== Metrics â€” FINAL, CORRECT STRUCTURE ===== */
 
 .metrics-stack {
   display: flex;
@@ -867,7 +867,7 @@ guidance-card {
 
 /* Optional: Add subtle "guidance" indicator */
 .actions-list::before {
-  content: "Agent Guidance — Review Before Proceeding";
+  content: "Agent Guidance â€” Review Before Proceeding";
   display: block;
   font-size: 11px;
   font-weight: var(--weight-bold);
@@ -909,7 +909,7 @@ guidance-card {
 
 /* Visual indicator icon (if present) */
 .badge.auto-send-eligible::before {
-  content: "✓";
+  content: "âœ“";
   font-size: 14px;
   font-weight: var(--weight-bold);
 }
@@ -926,7 +926,7 @@ guidance-card {
 }
 
 .badge.requires-review::before {
-  content: "⚠";
+  content: "âš ";
   font-size: 14px;
 }
 
@@ -1123,10 +1123,10 @@ textarea:focus-visible {
   }
 }
 /* ===============================
-   Widget (embedded) mode — CLEAN
+   Widget (embedded) mode â€” CLEAN
    =============================== */
 /* ===============================
-   Widget (embedded) mode — FINAL
+   Widget (embedded) mode â€” FINAL
    =============================== */
 
 #ai-assistant-panel.sidecar-embedded {
@@ -1189,7 +1189,7 @@ textarea:focus-visible {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
-/* 🚨 prevents random black box */
+/* ðŸš¨ prevents random black box */
 .toast:empty {
   display: none !important;
 }
@@ -1327,7 +1327,7 @@ button[aria-expanded="true"] .dropdown-caret {
   display: block;
 }
 /* ================================
-   CANNED RESPONSES DROPDOWN — FLOATING OVERLAY
+   CANNED RESPONSES DROPDOWN â€” FLOATING OVERLAY
    ================================ */
 
 /* Dropdown wrapper - relative positioning context */
@@ -1479,7 +1479,7 @@ button[aria-expanded="true"] .dropdown-caret {
 }
 
 .canned-item.recommended .canned-title::before {
-  content: "★ ";
+  content: "â˜… ";
   color: #2563eb;
   font-weight: 700;
   margin-right: 2px;
@@ -1492,12 +1492,12 @@ button[aria-expanded="true"] .dropdown-caret {
 }
 
 /* ================================
-   ⭐ Recommended canned response
+   â­ Recommended canned response
    (UI-only, no logic)
    ================================ */
 
 .canned-item.recommended .canned-title::before {
-  content: "★ ";
+  content: "â˜… ";
   color: #2563eb; /* blue star */
   font-weight: 700;
 }
@@ -1538,7 +1538,7 @@ button[aria-expanded="true"] .dropdown-caret {
   gap: 6px;
 }
 /* ===============================
-   Sidecar Header — MATCH SECTION CARDS
+   Sidecar Header â€” MATCH SECTION CARDS
    =============================== */
 
 .sidecar-header {
@@ -1580,7 +1580,7 @@ button[aria-expanded="true"] .dropdown-caret {
 }
 .sidecar-header .btn-icon,
 #reset-btn {
-  width: 28px; /* Was 32px → now ~12% smaller */
+  width: 28px; /* Was 32px â†’ now ~12% smaller */
   height: 28px;
   padding: 0;
   display: flex;
@@ -1645,7 +1645,7 @@ button[aria-expanded="true"] .dropdown-caret {
 #ai-assistant-panel.sidecar-embedded {
   border-left: 1px solid var(--color-border);
 }
-/* Confidence badge — normalize size with SAFE / NONE */
+/* Confidence badge â€” normalize size with SAFE / NONE */
 .metric-badge.confidence-very_low {
   padding: 6px 12px; /* EXACT match */
   font-size: 12px; /* EXACT match */
@@ -1653,7 +1653,7 @@ button[aria-expanded="true"] .dropdown-caret {
   line-height: 1;
 }
 /* ============================================
-   EMBEDDED SIDECAR — RIGHT DOCK
+   EMBEDDED SIDECAR â€” RIGHT DOCK
    ============================================ */
 
 .sidecar-wrapper.sidecar-embedded {
@@ -1685,7 +1685,7 @@ button[aria-expanded="true"] .dropdown-caret {
 }
 
 /* ============================================
-   AUTO-SEND CARD — Required by JS
+   AUTO-SEND CARD â€” Required by JS
    IDs: #auto-send-card, #auto-send-badge, #auto-send-reason
    ============================================ */
 
@@ -1703,7 +1703,7 @@ button[aria-expanded="true"] .dropdown-caret {
   animation: auto-send-fade-in 0.3s ease-out;
 }
 
-/* Hidden state — MUST use !important to override inline styles */
+/* Hidden state â€” MUST use !important to override inline styles */
 #auto-send-card.hidden {
   display: none !important;
 }
@@ -1742,7 +1742,7 @@ button[aria-expanded="true"] .dropdown-caret {
   gap: 6px;
 }
 
-/* Badge — visible by default when card is shown */
+/* Badge â€” visible by default when card is shown */
 #auto-send-badge {
   display: inline-flex;
   align-items: center;
@@ -1763,7 +1763,7 @@ button[aria-expanded="true"] .dropdown-caret {
 }
 
 #auto-send-badge::before {
-  content: "✓";
+  content: "âœ“";
   font-size: 14px;
   font-weight: 700;
 }
@@ -1832,96 +1832,102 @@ button[aria-expanded="true"] .dropdown-caret {
 .canned-dropdown-trigger[aria-expanded="true"] .dropdown-caret {
   transform: rotate(180deg) scale(1.1);
 }
-/* Collapse functionality */
+/* ================================
+   Header Layout (Centered Title)
+   ================================ */
 
 .sidecar-header {
-  cursor: pointer;
-  user-select: none;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
 }
 
-.sidecar-header:hover {
-  background-color: rgba(0, 0, 0, 0.02);
+.header-content {
+  grid-column: 2;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-/* Prevent hover bleed on reset */
-#reset-btn:hover {
-  background-color: transparent;
+.header-controls {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  gap: 6px;
+}
+/* ================================
+   Sidecar Collapse (Header Toggle)
+   ================================ */
+.sidecar-wrapper.sidecar-collapsed .sidecar-content:not(.sidecar-header-track) {
+  display: none;
 }
 
-/* Controls wrapper */
+.sidecar-wrapper.sidecar-collapsed .sidecar-container {
+  padding-bottom: 0;
+}
+/* ================================
+   Sidecar Header — Layout Fix
+   (Controls containment + centering)
+   ================================ */
+
+.sidecar-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+/* Left: logo + title */
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Text block */
+.header-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.header-text h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.header-version,
+.header-updated {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* Right: dropdown + refresh (CRITICAL FIX) */
 .header-controls {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* True accordion-style upward collapse (slow, weighted) */
-.sidecar-content:not(.sidecar-header-track) {
-  overflow: hidden;
+/* Icon buttons (dropdown + refresh) */
+.btn-icon {
+  width: 28px;
+  height: 28px;
 
-  /* Motion physics — heavier accordion weight */
-  transition:
-    max-height 0.6s cubic-bezier(0.22, 0.61, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1),
-    opacity 0.35s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 
-  /* Expanded state */
-  max-height: 2000px;
-  opacity: 1;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: transparent;
 
-  /* Critical for “eating upward” effect */
-  transform-origin: top;
-  transform: scaleY(1);
-}
-
-/* Collapsed: content compresses upward into itself */
-.sidecar-collapsed .sidecar-content:not(.sidecar-header-track) {
-  max-height: 0;
-  opacity: 0;
-  transform: scaleY(0);
-  pointer-events: none;
-}
-
-/* Visual cue for collapsed state */
-.sidecar-collapsed .sidecar-header {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.sidecar-collapsed .sidecar-content:not(.sidecar-header-track) {
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(-8px);
-  pointer-events: none;
-}
-
-/* Chevron */
-.collapse-chevron {
-  width: 16px;
-  height: 16px;
-  color: #6b7280;
-  flex-shrink: 0;
-  transition: transform 0.2s ease;
-}
-
-.sidecar-collapsed .collapse-chevron {
-  transform: rotate(180deg); /* ▸ */
-}
-
-/* Updated indicator */
-.header-updated {
-  display: none;
-  margin-left: 8px;
-  font-size: 0.75rem;
-  color: #3b82f6;
-  font-weight: 600;
-}
-
-.header-updated.visible {
-  display: inline;
-}
-
-/* Reset button isolation */
-#reset-btn {
-  position: relative;
-  z-index: 10;
+  cursor: pointer;
 }
