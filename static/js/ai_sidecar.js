@@ -349,6 +349,16 @@ class AISidecar {
         body: JSON.stringify(payload),
       });
 
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Non-JSON response from /api/v1/draft:", text);
+
+        this.showToast("Server error. Please try again.", "error");
+        return;
+      }
+
       const data = await response.json();
 
       if (!response.ok) {

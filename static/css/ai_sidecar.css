@@ -907,11 +907,9 @@ guidance-card {
   gap: 6px;
 }
 
-/* Visual indicator icon (if present) */
+/* Visual indicator icon (removed to prevent encoding artifacts) */
 .badge.auto-send-eligible::before {
-  content: "âœ“";
-  font-size: 14px;
-  font-weight: var(--weight-bold);
+  content: none !important;
 }
 
 .badge.requires-review {
