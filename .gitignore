@@ -24,3 +24,5 @@ ralph/instance/
 
 # Environment variables
 .env
+*.BACKUP
+*.broken_backup
