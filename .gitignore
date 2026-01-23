@@ -26,3 +26,20 @@ ralph/instance/
 .env
 *.BACKUP
 *.broken_backup
+
+# ----------------------------
+# Sidecar emergency / temp files
+# ----------------------------
+
+# Editor temp files
+*~
+#
+*.tmp
+
+# CSS emergency artifacts (DO NOT COMMIT)
+static/css/*.bak
+static/css/*LEGACY*
+static/css/change
+static/css/forces
+static/css/mtime
+
