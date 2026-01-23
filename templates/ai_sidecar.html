@@ -5,11 +5,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI Sidecar - FutureHub</title>
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/ai_sidecar.css') }}"
-    />
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/layout.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ai_sidecar.css') }}">
   </head>
+
   <body>
     <!-- Wrapper supports both modes: .sidecar-embedded or .sidecar-fullpage -->
 <div class="sidecar-wrapper sidecar-embedded" id="ai-assistant-panel">
@@ -69,93 +71,105 @@
     />
   </svg>
 </button>
-
-  </div>
 </header>
 
+<!-- Scrollable Content -->
+<div class="sidecar-content">
 
-        <!-- Scrollable Content -->
-        <div class="sidecar-content">
-          <!-- Input Form -->
-          <section class="section-card">
-            <h2 class="section-title">Ticket Information</h2>
-            <form id="draft-request-form">
-              <div class="form-group">
-                <label for="subject">Subject *</label>
-                <input
-                  type="text"
-                  id="subject"
-                  name="subject"
-                  required
-                  maxlength="500"
-                  placeholder="Ticket subject"
-                />
-              </div>
+  <!-- EVERYTHING THAT COLLAPSES -->
+  <div class="sidecar-collapsible">
 
-              <div class="form-group">
-                <label for="latest-message">Latest Message *</label>
-                <textarea
-                  id="latest-message"
-                  name="latest_message"
-                  rows="4"
-                  required
-                  maxlength="10000"
-                  placeholder="Customer's most recent message"
-                ></textarea>
-              </div>
+    <!-- Input Form -->
+    <section class="section-card">
+      <h2 class="section-title">Ticket Information</h2>
 
-              <div class="form-group">
-                <label for="customer-name">Customer Name</label>
-                <input
-                  type="text"
-                  id="customer-name"
-                  name="customer_name"
-                  maxlength="100"
-                  placeholder="Optional"
-                />
-              </div>
+      <form id="draft-request-form">
 
-              <button
-                type="submit"
-                id="generate-btn"
-                class="btn-primary btn-block"
-              >
-                <svg
-                  class="icon"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                  />
-                </svg>
-                Generate Draft
-              </button>
-            </form>
-          </section>
+        <div class="form-group">
+          <label for="subject">Subject *</label>
+          <input
+            type="text"
+            id="subject"
+            name="subject"
+            required
+            maxlength="500"
+            placeholder="Ticket subject"
+          />
+        </div>
 
-          <!-- Empty State -->
-          <div id="empty-state" class="empty-state">
-            <svg
-              class="empty-icon"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-              />
-            </svg>
-            <p>Enter ticket details to generate draft</p>
-          </div>
+        <div class="form-group">
+          <label for="latest-message">Latest Message *</label>
+          <textarea
+            id="latest-message"
+            name="latest_message"
+            rows="4"
+            required
+            maxlength="10000"
+            placeholder="Customer's most recent message"
+          ></textarea>
+        </div>
 
+        <div class="form-group">
+          <label for="customer-name">Customer Name</label>
+          <input
+            type="text"
+            id="customer-name"
+            name="customer_name"
+            maxlength="100"
+            placeholder="Optional"
+          />
+        </div>
+
+        <button
+          type="submit"
+          id="generate-btn"
+          class="btn-primary btn-block"
+        >
+          <svg
+            class="icon"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 10V3L4 14h7v7l9-11h-7z"
+            />
+          </svg>
+          Generate Draft
+        </button>
+
+      </form>
+    </section>
+
+    <!-- Empty State -->
+    <div id="empty-state" class="empty-state">
+      <svg
+        class="empty-icon"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+        />
+      </svg>
+      <p>Enter ticket details to generate draft</p>
+    </div>
+
+    <!-- Response container, metrics, draft, canned responses, etc
+         MUST all stay inside this div -->
+
+  </div> <!-- /.sidecar-collapsible -->
+
+</div> <!-- /.sidecar-content -->
+
+ 
           <!-- Response Container -->
           <div id="response-container" class="hidden">
 

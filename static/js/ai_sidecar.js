@@ -815,8 +815,27 @@ document.addEventListener("click", (e) => {
 // Initialize Sidecar (ONLY ONCE)
 // -------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+  console.log("Sidecar JS loaded");
+
   window.aiSidecar = new AISidecar();
+
+  const toggle = document.querySelector("#collapse-toggle");
+  const collapsible = document.querySelector(".sidecar-collapsible");
+
+  console.log("TOGGLE:", toggle);
+  console.log("COLLAPSIBLE:", collapsible);
+
+  if (!toggle || !collapsible) {
+    console.error("Collapse wiring failed");
+    return;
+  }
+
+  toggle.addEventListener("click", () => {
+    console.log("TOGGLE CLICKED");
+    collapsible.classList.toggle("is-collapsed");
+  });
 });
+
 /* ================================
    Sidecar Collapse (Header Toggle)
    ================================ */
