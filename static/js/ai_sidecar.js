@@ -1,4 +1,7 @@
 // static/js/ai_sidecar.js
+// Executive Summary is derived from existing per-ticket signals.
+// No analytics, no historical data, no AI calls.
+// This is a deterministic view layer.
 
 // -------------------------------------
 // Helper text inserted by Suggested Actions
@@ -175,25 +178,23 @@ class AISidecar {
   // -----------------------------
   // Auto-Send Card Methods
   // -----------------------------
-  showAutoSendCard(options) {
-    const reason = options && options.reason ? options.reason : "";
-
+  showAutoSendCard(options = {}) {
     const card = document.getElementById("auto-send-card");
-    if (card) {
-      card.classList.remove("hidden");
-    }
+    if (!card) return;
+
+    card.classList.remove("hidden");
 
     const reasonEl = document.getElementById("auto-send-reason");
     if (reasonEl) {
-      reasonEl.textContent = reason || "This ticket qualifies for auto-send.";
+      reasonEl.textContent =
+        options.reason || "This ticket qualifies for auto-send.";
     }
 
     const badgeEl = document.getElementById("auto-send-badge");
-    if (badgeEl) {
-      badgeEl.classList.remove("hidden");
-    }
+    if (badgeEl) badgeEl.classList.remove("hidden");
 
-    console.log("✅ Auto-send eligible:", reason);
+    // 🔒 SINGLE SOURCE OF TRUTH
+    this.autoSendEligible = true;
   }
 
   hideAutoSendCard() {
@@ -515,16 +516,17 @@ class AISidecar {
     if (recEl)
       recEl.textContent = (guidance && guidance.recommendation) || "N/A";
   }
-
   renderConfidenceRisk(classification) {
     if (!classification || !classification.confidence) return;
 
     const confidence = classification.confidence;
     const percentage = Math.round((confidence.overall || 0) * 100);
 
+    // ✅ CONFIDENCE PERCENTAGE (KEEP THIS)
     const pctEl = document.getElementById("confidence-percentage");
     if (pctEl) pctEl.textContent = percentage + "%";
 
+    // ✅ CONFIDENCE LABEL (KEEP THIS)
     const labelEl = document.getElementById("confidence-label");
     if (labelEl) {
       const label = (confidence.label || "unknown").toLowerCase();
@@ -532,22 +534,27 @@ class AISidecar {
       labelEl.className = `metric-badge confidence-${label}`;
     }
 
-    const safetyEl = document.getElementById("safety-mode");
-    if (safetyEl) {
-      const sm = (classification.safety_mode || "unknown").toLowerCase();
-      safetyEl.textContent = sm.toUpperCase();
-      safetyEl.className = `metric-badge safety-${sm}`;
-    }
-
+    // Ambiguity
     const ambiguityEl = document.getElementById("ambiguity-status");
     if (ambiguityEl) {
-      if (confidence.ambiguity_detected) {
-        ambiguityEl.textContent = "DETECTED";
-        ambiguityEl.className = "metric-badge badge-warning";
-      } else {
-        ambiguityEl.textContent = "NONE";
-        ambiguityEl.className = "metric-badge badge-success";
-      }
+      ambiguityEl.textContent = confidence.ambiguity_detected
+        ? "DETECTED"
+        : "NONE";
+      ambiguityEl.className = confidence.ambiguity_detected
+        ? "metric-badge badge-warning"
+        : "metric-badge badge-success";
+    }
+
+    // Executive Summary (derived from same signals)
+    if (typeof renderExecutiveSummary === "function") {
+      renderExecutiveSummary({
+        resolutionLikely: (confidence.overall || 0) >= 0.7,
+        missingInfo: confidence.missing_info_detected === true,
+        autoSendEligible: this.autoSendEligible === true,
+        ambiguityDetected: confidence.ambiguity_detected === true,
+        safetyRisk: (classification.safety_mode || "").toLowerCase() !== "safe",
+        notes: classification.notes || "",
+      });
     }
   }
 
@@ -810,6 +817,151 @@ document.addEventListener("click", (e) => {
     dropdownBtn.setAttribute("aria-expanded", "false");
   });
 })();
+function updateExecutiveSummary({
+  confidence,
+  safety,
+  ambiguity,
+  autoSendEligible,
+}) {
+  document.getElementById("exec-draft-outcome").textContent =
+    safety === "safe" ? "Ready to send" : "Needs review";
+
+  document.getElementById("exec-recommended-action").textContent =
+    autoSendEligible ? "Auto-send" : "Manual review";
+
+  document.getElementById("exec-auto-send-status").textContent =
+    autoSendEligible ? "Yes" : "No";
+
+  document.getElementById("exec-primary-risk").textContent =
+    ambiguity === "high"
+      ? "Missing or unclear info"
+      : safety !== "safe"
+        ? "Policy / safety concern"
+        : "None detected";
+
+  document.getElementById("exec-notes").textContent = autoSendEligible
+    ? "Response meets auto-send criteria."
+    : "Human review recommended before sending.";
+}
+const RALPH_WEEKLY_SUMMARY_URL =
+  "http://127.0.0.1:5000/insights/weekly-summary";
+
+let cachedWeeklySummary = null;
+let lastWeeklyFetch = 0;
+const WEEKLY_CACHE_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+async function fetchWeeklySummary() {
+  const now = Date.now();
+
+  if (cachedWeeklySummary && now - lastWeeklyFetch < WEEKLY_CACHE_MS) {
+    return cachedWeeklySummary;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const res = await fetch(RALPH_WEEKLY_SUMMARY_URL, {
+      signal: controller.signal,
+    });
+
+    if (!res.ok) throw new Error("Weekly summary fetch failed");
+
+    cachedWeeklySummary = await res.json();
+    lastWeeklyFetch = now;
+    return cachedWeeklySummary;
+  } catch (err) {
+    console.warn("Weekly summary unavailable", err);
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+function renderWeeklySummary(summary) {
+  const body = document.getElementById("weekly-summary-body");
+  if (!body) return;
+
+  if (!summary) {
+    body.innerHTML = `<p class="muted">Summary unavailable.</p>`;
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="summary-section">
+      <strong>Top Intents</strong>
+      <ul>
+        ${summary.top_intents
+          .map((i) => `<li>${i.intent} (${i.event_count})</li>`)
+          .join("")}
+      </ul>
+    </div>
+
+    <div class="summary-section">
+      <strong>Biggest Increases</strong>
+      <ul>
+        ${summary.intent_increases
+          .map((i) => `<li>${i.intent}: +${i.delta}</li>`)
+          .join("")}
+      </ul>
+    </div>
+
+    <div class="summary-section">
+      <strong>Missing Approvals</strong>
+      <ul>
+        ${summary.intents_missing_approval
+          .map((i) => `<li>${i.intent}</li>`)
+          .join("")}
+      </ul>
+    </div>
+
+    <p class="muted">
+      Last updated: ${new Date(summary.generated_at).toLocaleDateString()}
+    </p>
+  `;
+}
+document
+  .getElementById("weekly-summary-toggle")
+  ?.addEventListener("click", async () => {
+    const body = document.getElementById("weekly-summary-body");
+    body.classList.toggle("hidden");
+
+    if (!body.dataset.loaded) {
+      const summary = await fetchWeeklySummary();
+      renderWeeklySummary(summary);
+      body.dataset.loaded = "true";
+    }
+  });
+function renderExecutiveSummary(signals) {
+  if (!signals) return;
+
+  // Draft Outcome
+  document.getElementById("exec-draft-outcome").textContent =
+    signals.resolutionLikely ? "Likely resolved" : "Follow-up expected";
+
+  // Recommended Action
+  document.getElementById("exec-recommended-action").textContent =
+    signals.missingInfo
+      ? "Request missing information"
+      : "Send draft as written";
+
+  // Auto-Send
+  document.getElementById("exec-auto-send-status").textContent =
+    signals.autoSendEligible
+      ? "Eligible (manual review allowed)"
+      : "Not eligible";
+
+  // Primary Risk
+  document.getElementById("exec-primary-risk").textContent =
+    signals.ambiguityDetected
+      ? "Ambiguous customer intent"
+      : signals.safetyRisk
+        ? "Policy / safety risk"
+        : "None detected";
+
+  // Notes (short, human-readable)
+  document.getElementById("exec-notes").textContent =
+    signals.notes || "Based on current ticket signals";
+}
 
 // -------------------------------------
 // Initialize Sidecar (ONLY ONCE)
@@ -817,25 +969,13 @@ document.addEventListener("click", (e) => {
 document.addEventListener("DOMContentLoaded", () => {
   console.log("Sidecar JS loaded");
 
+  // Initialize sidecar
   window.aiSidecar = new AISidecar();
 
-  const toggle = document.querySelector("#collapse-toggle");
-  const collapsible = document.querySelector(".sidecar-collapsible");
-
-  console.log("TOGGLE:", toggle);
-  console.log("COLLAPSIBLE:", collapsible);
-
-  if (!toggle || !collapsible) {
-    console.error("Collapse wiring failed");
-    return;
+  // Auto-run ONLY when query params exist
+  if (typeof window.aiSidecar.autoGenerateFromQueryParamsOnce === "function") {
+    setTimeout(() => {
+      window.aiSidecar.autoGenerateFromQueryParamsOnce();
+    }, 200);
   }
-
-  toggle.addEventListener("click", () => {
-    console.log("TOGGLE CLICKED");
-    collapsible.classList.toggle("is-collapsed");
-  });
 });
-
-/* ================================
-   Sidecar Collapse (Header Toggle)
-   ================================ */

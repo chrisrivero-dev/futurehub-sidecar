@@ -322,7 +322,7 @@
 <section class="section-card" id="executive-summary">
   <h2 class="section-title">Executive Summary</h2>
 
-  <ul>
+  <ul class="exec-list">
     <li>
       <strong>Draft Outcome:</strong>
       <span id="exec-draft-outcome">—</span>
@@ -348,6 +348,25 @@
       <span id="exec-notes">—</span>
     </li>
   </ul>
+
+  <!-- Weekly Executive Summary (collapsible, secondary) -->
+  <div class="weekly-summary-wrapper">
+    <button
+      class="weekly-summary-toggle"
+      id="weekly-summary-toggle"
+      type="button"
+    >
+      📊 Weekly Executive Summary
+      <span class="chevron">▾</span>
+    </button>
+
+    <div
+      class="weekly-summary-body hidden"
+      id="weekly-summary-body"
+    >
+      <p class="muted">Loading summary…</p>
+    </div>
+  </div>
 </section>
 
 

@@ -22,3 +22,44 @@
 .hidden {
   display: none !important;
 }
+.weekly-summary-wrapper {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle, #eee);
+}
+
+.weekly-summary-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 8px 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-muted, #555);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.weekly-summary-toggle:hover {
+  color: var(--text-primary, #111);
+}
+
+.weekly-summary-body {
+  margin-top: 8px;
+  padding-left: 2px;
+}
+
+.weekly-summary-body.hidden {
+  display: none;
+}
+
+.summary-section {
+  margin-bottom: 10px;
+}
+
+.summary-section strong {
+  display: block;
+  margin-bottom: 4px;
+}
