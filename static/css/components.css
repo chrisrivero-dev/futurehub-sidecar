@@ -143,7 +143,7 @@
 .form-group {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch; /* ✅ left-aligned inputs */
   text-align: left;
   margin-bottom: var(--spacing-md);
 }
