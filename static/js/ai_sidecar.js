@@ -87,21 +87,38 @@ class AISidecar {
   }
 
   // -----------------------------
-  // Collapse / Expand
+  // Collapse / Expand (GLOBAL)
   // -----------------------------
   bindCollapseToggle() {
     const toggleBtn = document.getElementById("collapse-toggle");
-    const wrapper = document.querySelector(".sidecar-wrapper");
-    if (!toggleBtn || !wrapper) return;
+    if (!toggleBtn) return;
+
+    // Pick the real top-level wrapper (embedded uses #ai-assistant-panel)
+    const wrapper =
+      document.getElementById("ai-assistant-panel") ||
+      document.querySelector(".sidecar-wrapper");
+
+    if (!wrapper) return;
+
+    // Collapse the REAL content container directly
+    const collapsible = wrapper.querySelector(".sidecar-collapsible");
+    if (!collapsible) return;
 
     const chevron = toggleBtn.querySelector(".collapse-chevron");
     let isCollapsed = false;
 
     toggleBtn.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
 
       isCollapsed = !isCollapsed;
+
+      // keep the wrapper flag (nice for other CSS)
       wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
+
+      // GUARANTEED hide/show: no selector chaining required
+      collapsible.classList.toggle("collapsed", isCollapsed);
+
       toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
 
       if (chevron) {
@@ -149,9 +166,6 @@ class AISidecar {
         this.showToast("Insert functionality coming soon");
       });
     }
-
-    // Collapsible sections
-    this.initCollapsibles();
 
     // Canned Responses dropdown open/close (wired ONCE)
     if (this.cannedBtn && this.cannedMenu) {
@@ -723,18 +737,6 @@ class AISidecar {
 
     messagesContainer.innerHTML =
       '<p class="help-text">No conversation history in this request</p>';
-  }
-
-  // ✅ Must exist, because init() calls it
-  initCollapsibles() {
-    const toggles = document.querySelectorAll(".section-toggle");
-    toggles.forEach((toggle) => {
-      toggle.addEventListener("click", () => {
-        const content = toggle.nextElementSibling;
-        toggle.classList.toggle("collapsed");
-        if (content) content.classList.toggle("collapsed");
-      });
-    });
   }
 
   copyDraft() {

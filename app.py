@@ -16,7 +16,6 @@ from ai.intent_normalization import normalize_intent
 from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
 from dotenv import load_dotenv
-
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -72,13 +71,21 @@ def draft():
     except Exception:
         return error_response("malformed_json", "Request body must be valid JSON")
 
-    if not llm_allowed():
+    # -------------------------------------------------
+    # LLM ENABLE FLAG — DEFAULT ON
+    # -------------------------------------------------
+    llm_flag = str(os.getenv("LLM_ENABLED", "1")).strip().lower()
+    llm_enabled = llm_flag not in ("0", "false", "no", "off")
+
+    # If explicitly disabled, block early
+    if not llm_enabled:
         return jsonify({
             "draft_available": False,
-            "reason": "LLM disabled",
             "auto_send_eligible": False,
-            "confidence": 0.0,
-        }), 200
+            "confidence": 0,
+            "reason": "LLM disabled",
+        })
+
 
     subject = str(data.get("subject") or "").strip()
     latest_message = str(data.get("latest_message") or "").strip()
