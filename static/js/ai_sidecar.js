@@ -116,9 +116,6 @@ class AISidecar {
       // keep the wrapper flag (nice for other CSS)
       wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
 
-      // GUARANTEED hide/show: no selector chaining required
-      collapsible.classList.toggle("collapsed", isCollapsed);
-
       toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
 
       if (chevron) {

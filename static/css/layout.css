@@ -75,18 +75,6 @@
   flex: 0 0 auto;
 }
 
-/* Collapse functionality */
-.sidecar-collapsible {
-  overflow: hidden;
-  transition:
-    max-height 0.6s cubic-bezier(0.22, 0.61, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1),
-    opacity 0.35s ease;
-  max-height: 2000px;
-  opacity: 1;
-  transform-origin: top;
-  transform: scaleY(1);
-}
 /* Guaranteed collapse: JS toggles this directly on the content wrapper */
 .sidecar-collapsible.collapsed {
   display: none !important;
