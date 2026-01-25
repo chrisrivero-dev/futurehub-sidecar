@@ -9,9 +9,24 @@ def generate_llm_response(
     prompt: str | None = None,
     system_prompt: str | None = None,
     user_message: str | None = None,
+    **kwargs,
 ):
+    """
+    Backward-compatible LLM entrypoint.
+    Supports:
+      - generate_llm_response(prompt="...")
+      - generate_llm_response(system_prompt="...", user_message="...")
+    """
+
     if prompt is None:
+        if not system_prompt or not user_message:
+            raise ValueError(
+                "generate_llm_response requires either prompt or (system_prompt + user_message)"
+            )
         prompt = f"{system_prompt}\n\n{user_message}"
+
+    # ⬇️ DO NOT CHANGE ANYTHING BELOW THIS LINE
+    # existing OpenAI client logic
 
     """
     Returns:
