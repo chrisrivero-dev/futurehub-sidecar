@@ -21,6 +21,24 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+import os
+from datetime import datetime
+
+APP_BUILD = os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GITHUB_SHA") or "unknown"
+APP_BUILD_TIME = os.getenv("APP_BUILD_TIME") or datetime.utcnow().isoformat() + "Z"
+
+
+def _build_id() -> str:
+    # Railway commonly sets this (if not, it falls back safely)
+    sha = (
+        os.getenv("RAILWAY_GIT_COMMIT_SHA")
+        or os.getenv("GIT_COMMIT_SHA")
+        or os.getenv("COMMIT_SHA")
+        or ""
+    )
+    return (sha[:8] if sha else "dev")
+
+
 # -----------------------------------
 # LLM kill switch
 # -----------------------------------
@@ -61,6 +79,13 @@ def get_confidence_label(confidence: float) -> str:
         return "low"
     return "very_low"
 
+@sidecar_ui_bp.route("/sidecar/", methods=["GET"])
+def sidecar_ui():
+    return render_template(
+        "ai_sidecar.html",
+        app_build=APP_BUILD,
+        app_build_time=APP_BUILD_TIME,
+    )
 
 @app.route("/api/v1/draft", methods=["POST"])
 def draft():
