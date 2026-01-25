@@ -44,7 +44,10 @@ def generate_llm_response(
         # HARD FAIL so you never silently ship canned thinking it's LLM.
         raise RuntimeError("OPENAI_API_KEY is not set in the environment.")
 
-    logger.info("LLM_CALL_START model=%s prompt_len=%s", model, len(prompt))
+    _model = os.getenv("OPENAI_MODEL") or os.getenv("LLM_MODEL") or "unknown"
+logger.info("LLM_CALL_START model=%s prompt_len=%s", _model, len(prompt))
+
+
 
     client = OpenAI(api_key=api_key)
 
