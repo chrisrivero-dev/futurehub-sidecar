@@ -1,15 +1,22 @@
 from flask import Blueprint, render_template
+import os
 
 sidecar_ui_bp = Blueprint(
-    'sidecar_ui',
+    "sidecar_ui",
     __name__,
-    url_prefix='/sidecar'
+    url_prefix="/sidecar",
 )
 
-from flask import render_template
-from app import _build_id  # or move _build_id into a shared util
+def _build_id() -> str:
+    sha = (
+        os.getenv("RAILWAY_GIT_COMMIT_SHA")
+        or os.getenv("GIT_COMMIT_SHA")
+        or os.getenv("COMMIT_SHA")
+        or ""
+    )
+    return sha[:8] if sha else "dev"
 
-@sidecar_ui_bp.route("/sidecar/")
+@sidecar_ui_bp.route("/")
 def sidecar():
     return render_template(
         "ai_sidecar.html",
