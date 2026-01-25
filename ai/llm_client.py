@@ -13,6 +13,7 @@ def generate_llm_response(
 ):
     """
     Backward-compatible LLM entrypoint.
+
     Supports:
       - generate_llm_response(prompt="...")
       - generate_llm_response(system_prompt="...", user_message="...")
@@ -25,8 +26,9 @@ def generate_llm_response(
             )
         prompt = f"{system_prompt}\n\n{user_message}"
 
-    # ⬇️ DO NOT CHANGE ANYTHING BELOW THIS LINE
-    # existing OpenAI client logic
+    # DO NOT CHANGE ANY EXISTING LOGIC BELOW THIS LINE.
+    # Keep your current OpenAI call and return structure as-is, but use `prompt`
+    # as the final assembled prompt string.
 
     """
     Returns:
