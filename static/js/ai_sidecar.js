@@ -555,6 +555,14 @@ class AISidecar {
         ? "metric-badge badge-warning"
         : "metric-badge badge-success";
     }
+    // Safety Mode
+    const safetyEl = document.getElementById("safety-mode");
+    if (safetyEl) {
+      const safety = (classification.safety_mode || "safe").toLowerCase();
+      safetyEl.textContent = safety.toUpperCase();
+      safetyEl.className =
+        "metric-badge " + (safety === "safe" ? "safety-safe" : "safety-unsafe");
+    }
 
     // Executive Summary (derived from same signals)
     if (typeof renderExecutiveSummary === "function") {
