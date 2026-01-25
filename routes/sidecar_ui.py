@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template
-from app import _build_id  # ✅ import at top-level (important)
+from utils.build import build_id
 
 sidecar_ui_bp = Blueprint(
     "sidecar_ui",
@@ -11,5 +11,5 @@ sidecar_ui_bp = Blueprint(
 def sidecar():
     return render_template(
         "ai_sidecar.html",
-        build_id=_build_id(),
+        build_id=build_id(),
     )
