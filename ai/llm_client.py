@@ -5,7 +5,14 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-def generate_llm_response(prompt: str, *, model: str = "gpt-4o-mini") -> dict:
+def generate_llm_response(
+    prompt: str | None = None,
+    system_prompt: str | None = None,
+    user_message: str | None = None,
+):
+    if prompt is None:
+        prompt = f"{system_prompt}\n\n{user_message}"
+
     """
     Returns:
       {

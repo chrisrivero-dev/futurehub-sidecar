@@ -518,9 +518,9 @@ def generate_draft(
         )
 
         fallback_text = generate_llm_response(
-            system_prompt=clarifying_system_prompt,
-            user_message=latest_message,
+            prompt=f"You are a helpful support agent.\n\n{latest_message}"
         )
+
 
         return {
             "type": "full",
