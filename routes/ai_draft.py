@@ -4,10 +4,12 @@ AI Draft Generation API
 Sidecar service endpoint for draft generation
 """
 
-from flask import Blueprint, request, jsonify, render_template
-from datetime import datetime
+from flask import Blueprint, request, jsonify
 import time
 import logging
+
+from ai.draft_generator import generate_draft
+from intent_classifier import detect_intent
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +24,53 @@ MAX_CUSTOMER_NAME_LENGTH = 100
 MAX_ATTACHMENTS = 10
 MAX_PAYLOAD_BYTES = 1048576  # 1MB
 
-@ai_draft_bp.route('/draft', methods=['POST'])
+@ai_draft_bp.route("/draft", methods=["POST"])
 def draft():
     start_time = time.perf_counter()
+    autosend_confidence = 0.0
+
+    data = request.get_json() or {}
+
+    subject = str(data.get("subject") or "").strip()
+    latest_message = str(data.get("latest_message") or "").strip()
+    conversation_history = data.get("conversation_history") or []
+
+    if not subject or not latest_message:
+        return jsonify({
+            "draft_available": False,
+            "reason": "subject and latest_message are required"
+        }), 400
+
+    metadata = data.get("metadata") or {}
+    attachments = metadata.get("attachments") or []
+
+    classification = detect_intent(
+        latest_message,
+        subject,
+        metadata={
+            "order_number": metadata.get("order_number"),
+            "product": metadata.get("product"),
+            "attachments": attachments,
+        },
+    )
+
+    # 🔴 LLM MUST ALWAYS RUN — NO FLAGS, NO GUARDS
+    draft = generate_draft(
+        subject=subject,
+        latest_message=latest_message,
+        customer_name=data.get("customer_name"),
+        conversation_history=conversation_history,
+        classification=classification,
+        metadata=metadata,
+    )
+
+    return jsonify({
+        "draft_available": True,
+        "auto_send_eligible": False,
+        "confidence": autosend_confidence,
+        **draft,
+    }), 200
+
 
     # -----------------------------
     # Parse JSON

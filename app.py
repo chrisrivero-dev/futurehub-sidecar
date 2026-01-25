@@ -83,14 +83,6 @@ def draft():
     except Exception:
         return error_response("malformed_json", "Request body must be valid JSON")
 
-    if not llm_allowed():
-        return jsonify({
-            "draft_available": False,
-            "reason": "LLM disabled",
-            "auto_send_eligible": False,
-            "confidence": 0.0,
-        }), 200
-
     subject = str(data.get("subject") or "").strip()
     latest_message = str(data.get("latest_message") or "").strip()
     conversation_history = data.get("conversation_history") or []

@@ -1,45 +1,39 @@
+# ai/llm_client.py
 import os
-import traceback
-from dotenv import load_dotenv
+import logging
 from openai import OpenAI
 
-# -------------------------------------
-# Environment setup (load ONCE)
-# -------------------------------------
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise RuntimeError(
-        "OPENAI_API_KEY is not set. LLM calls will not work in dev."
+def generate_llm_response(prompt: str, *, model: str = "gpt-4o-mini") -> dict:
+    """
+    Returns:
+      {
+        "text": str,
+        "model": str,
+        "llm_used": bool
+      }
+    Raises RuntimeError if OPENAI_API_KEY missing.
+    """
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        # HARD FAIL so you never silently ship canned thinking it's LLM.
+        raise RuntimeError("OPENAI_API_KEY is not set in the environment.")
+
+    logger.info("LLM_CALL_START model=%s prompt_len=%s", model, len(prompt))
+
+    client = OpenAI(api_key=api_key)
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are a helpful customer support assistant."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
     )
 
-client = OpenAI(api_key=api_key)
+    text = (resp.choices[0].message.content or "").strip()
+    logger.info("LLM_CALL_OK model=%s out_len=%s", model, len(text))
 
-# -------------------------------------
-# LLM call wrapper (HARD FAIL, NO SILENCE)
-# -------------------------------------
-def generate_llm_response(*, system_prompt: str, user_message: str) -> str:
-    print("🔥 LLM_CLIENT HIT")
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.3,
-        )
-
-        content = response.choices[0].message.content
-        if not content:
-            raise RuntimeError("LLM returned empty content")
-
-        print("🔥 LLM_CLIENT RETURNING RESPONSE")
-        return content.strip()
-
-    except Exception as e:
-        print("❌ LLM_CLIENT EXCEPTION")
-        traceback.print_exc()
-        raise
+    return {"text": text, "model": model, "llm_used": True}
