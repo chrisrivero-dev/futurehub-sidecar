@@ -27,224 +27,232 @@ MAX_PAYLOAD_BYTES = 1048576  # 1MB
 @ai_draft_bp.route("/draft", methods=["POST"])
 def draft():
     start_time = time.perf_counter()
-    autosend_confidence = 0.0
 
-    data = request.get_json() or {}
+    try:
+        data = request.get_json(force=True) or {}
 
-    subject = str(data.get("subject") or "").strip()
-    latest_message = str(data.get("latest_message") or "").strip()
-    conversation_history = data.get("conversation_history") or []
+        subject = str(data.get("subject") or "").strip()
+        latest_message = str(data.get("latest_message") or "").strip()
+        customer_name = data.get("customer_name")
 
-    if not subject or not latest_message:
+        if not subject or not latest_message:
+            return jsonify({
+                "draft_available": False,
+                "error": "invalid_input",
+                "message": "subject and latest_message are required",
+            }), 400
+
+        # 🚨 DO NOT SHORT-CIRCUIT
+        draft_output = generate_draft(
+            subject=subject,
+            latest_message=latest_message,
+            customer_name=customer_name,
+        )
+
+        return jsonify({
+            "draft_available": True,
+            **draft_output,
+        }), 200
+
+    except Exception as e:
+        logger.exception("DRAFT_ENDPOINT_CRASH")
+
+        # 🔥 THIS IS THE KEY PART 🔥
         return jsonify({
             "draft_available": False,
-            "reason": "subject and latest_message are required"
-        }), 400
+            "error": "internal_error",
+            "exception": str(e),
+            "type": e.__class__.__name__,
+        }), 500
 
-    metadata = data.get("metadata") or {}
-    attachments = metadata.get("attachments") or []
 
-    classification = detect_intent(
-        latest_message,
-        subject,
-        metadata={
-            "order_number": metadata.get("order_number"),
-            "product": metadata.get("product"),
-            "attachments": attachments,
+
+    # -----------------------------
+# Payload size guard
+# -----------------------------
+if request.content_length and request.content_length > MAX_PAYLOAD_BYTES:
+    return error_response(
+        code="payload_too_large",
+        message=f"Request exceeds maximum size of {MAX_PAYLOAD_BYTES} bytes",
+        details={
+            "request_size_bytes": request.content_length,
+            "max_size_bytes": MAX_PAYLOAD_BYTES
         },
+        status=400
     )
 
-    # 🔴 LLM MUST ALWAYS RUN — NO FLAGS, NO GUARDS
-    draft = generate_draft(
-        subject=subject,
-        latest_message=latest_message,
-        customer_name=data.get("customer_name"),
+# -----------------------------
+# Parse JSON
+# -----------------------------
+data = request.get_json(silent=True)
+if data is None or not isinstance(data, dict):
+    return error_response(
+        code="malformed_json",
+        message="Request body must be valid JSON object",
+        status=400
+    )
+
+# -----------------------------
+# Required fields (conversation_history is OPTIONAL)
+# -----------------------------
+required_fields = ["subject", "latest_message"]
+missing = [f for f in required_fields if not str(data.get(f) or "").strip()]
+
+if missing:
+    return error_response(
+        code="invalid_input",
+        message=f"Missing required fields: {', '.join(missing)}",
+        details={
+            "missing_fields": missing,
+            "required_fields": required_fields
+        },
+        status=400
+    )
+
+# -----------------------------
+# Normalize core fields
+# -----------------------------
+subject = str(data.get("subject") or "").strip()
+latest_message = str(data.get("latest_message") or "").strip()
+
+# conversation_history defaults to []
+conversation_history = data.get("conversation_history", [])
+if conversation_history is None:
+    conversation_history = []
+
+if not isinstance(conversation_history, list):
+    return error_response(
+        code="invalid_input",
+        message="Field 'conversation_history' must be a list if provided",
+        details={"field": "conversation_history"},
+        status=400
+    )
+
+# -----------------------------
+# Field length validation
+# -----------------------------
+if len(subject) > MAX_SUBJECT_LENGTH:
+    return error_response(
+        code="payload_too_large",
+        message=f"Field 'subject' exceeds maximum length of {MAX_SUBJECT_LENGTH} characters",
+        details={"field": "subject", "max_length": MAX_SUBJECT_LENGTH},
+        status=400
+    )
+
+if len(latest_message) > MAX_MESSAGE_LENGTH:
+    return error_response(
+        code="payload_too_large",
+        message=f"Field 'latest_message' exceeds maximum length of {MAX_MESSAGE_LENGTH} characters",
+        details={"field": "latest_message", "max_length": MAX_MESSAGE_LENGTH},
+        status=400
+    )
+
+if len(conversation_history) > MAX_CONVERSATION_HISTORY:
+    return error_response(
+        code="payload_too_large",
+        message=f"Conversation history exceeds maximum of {MAX_CONVERSATION_HISTORY} messages",
+        details={
+            "message_count": len(conversation_history),
+            "max_messages": MAX_CONVERSATION_HISTORY
+        },
+        status=400
+    )
+
+# -----------------------------
+# Validate conversation history items (only if present)
+# -----------------------------
+for i, msg in enumerate(conversation_history):
+    if not isinstance(msg, dict):
+        return error_response(
+            code="invalid_input",
+            message=f"Message at index {i} must be an object",
+            status=400
+        )
+
+    if msg.get("role") not in ["customer", "agent"]:
+        return error_response(
+            code="invalid_input",
+            message=f"Message at index {i} must have role 'customer' or 'agent'",
+            status=400
+        )
+
+    if not isinstance(msg.get("text"), str):
+        return error_response(
+            code="invalid_input",
+            message=f"Message at index {i} must contain text",
+            status=400
+        )
+
+    if len(msg["text"]) > MAX_MESSAGE_LENGTH:
+        return error_response(
+            code="payload_too_large",
+            message=f"Message at index {i} exceeds maximum length",
+            status=400
+        )
+
+# -----------------------------
+# Optional fields
+# -----------------------------
+customer_name = data.get("customer_name")
+if customer_name and len(str(customer_name)) > MAX_CUSTOMER_NAME_LENGTH:
+    return error_response(
+        code="payload_too_large",
+        message=f"Field 'customer_name' exceeds maximum length",
+        status=400
+    )
+
+metadata = data.get("metadata", {})
+attachments = metadata.get("attachments", []) if isinstance(metadata, dict) else []
+
+if len(attachments) > MAX_ATTACHMENTS:
+    return error_response(
+        code="payload_too_large",
+        message="Too many attachments",
+        status=400
+    )
+
+
+    # -----------------------------
+# Intent classification
+# -----------------------------
+classification = classify_intent(
+    subject=subject,
+    latest_message=latest_message,
+    conversation_history=conversation_history
+)
+
+# -----------------------------
+# Draft generation (SINGLE SOURCE)
+# -----------------------------
+try:
+    draft_result = generate_draft(
+        subject=data["subject"],
+        latest_message=data["latest_message"],
+        customer_name=customer_name,
         conversation_history=conversation_history,
         classification=classification,
         metadata=metadata,
     )
-
+except Exception as e:
+    logger.exception("DRAFT_GENERATION_FAILED")
     return jsonify({
-        "draft_available": True,
-        "auto_send_eligible": False,
-        "confidence": autosend_confidence,
-        **draft,
-    }), 200
+        "success": False,
+        "error": "draft_generation_failed",
+        "message": str(e),
+    }), 500
 
 
-    # -----------------------------
-    # Parse JSON
-    # -----------------------------
-    try:
-        data = request.get_json()
-    except Exception:
-        return error_response(
-            code="malformed_json",
-            message="Request body must be valid JSON",
-            status=400
-        )
+# -----------------------------
+# Auto-send eligibility (SOURCE OF TRUTH)
+# -----------------------------
+auto_send_eligible = calculate_auto_send_eligible(
+    classification=classification,
+    draft=draft_result,
+    attachments=attachments,
+)
 
-    if not data:
-        return error_response(
-            code="malformed_json",
-            message="Request body must be valid JSON",
-            status=400
-        )
+requires_review = not auto_send_eligible
 
-    # -----------------------------
-    # Payload size guard
-    # -----------------------------
-    if request.content_length and request.content_length > MAX_PAYLOAD_BYTES:
-        return error_response(
-            code="payload_too_large",
-            message=f"Request exceeds maximum size of {MAX_PAYLOAD_BYTES} bytes",
-            details={
-                "request_size_bytes": request.content_length,
-                "max_size_bytes": MAX_PAYLOAD_BYTES
-            },
-            status=400
-        )
-
-    # -----------------------------
-    # Required fields
-    # -----------------------------
-    required_fields = ['subject', 'latest_message', 'conversation_history']
-    missing = []
-
-    for field in required_fields:
-        if field not in data or data[field] is None:
-            missing.append(field)
-        elif field == 'conversation_history' and not isinstance(data[field], list):
-            missing.append(field)
-
-    if missing:
-        return error_response(
-            code="invalid_input",
-            message=f"Missing or invalid required fields: {', '.join(missing)}",
-            details={
-                "missing_fields": missing,
-                "required_fields": required_fields
-            },
-            status=400
-        )
-
-    # -----------------------------
-    # Field length validation
-    # -----------------------------
-    if len(data['subject']) > MAX_SUBJECT_LENGTH:
-        return error_response(
-            code="payload_too_large",
-            message=f"Field 'subject' exceeds maximum length of {MAX_SUBJECT_LENGTH} characters",
-            details={"field": "subject", "max_length": MAX_SUBJECT_LENGTH},
-            status=400
-        )
-
-    if len(data['latest_message']) > MAX_MESSAGE_LENGTH:
-        return error_response(
-            code="payload_too_large",
-            message=f"Field 'latest_message' exceeds maximum length of {MAX_MESSAGE_LENGTH} characters",
-            details={"field": "latest_message", "max_length": MAX_MESSAGE_LENGTH},
-            status=400
-        )
-
-    conversation_history = data['conversation_history']
-
-    if len(conversation_history) > MAX_CONVERSATION_HISTORY:
-        return error_response(
-            code="payload_too_large",
-            message=f"Conversation history exceeds maximum of {MAX_CONVERSATION_HISTORY} messages",
-            details={
-                "message_count": len(conversation_history),
-                "max_messages": MAX_CONVERSATION_HISTORY
-            },
-            status=400
-        )
-
-    # -----------------------------
-    # Validate conversation history items
-    # -----------------------------
-    for i, msg in enumerate(conversation_history):
-        if not isinstance(msg, dict):
-            return error_response(
-                code="invalid_input",
-                message=f"Message at index {i} must be an object",
-                status=400
-            )
-
-        if msg.get('role') not in ['customer', 'agent']:
-            return error_response(
-                code="invalid_input",
-                message=f"Message at index {i} must have role 'customer' or 'agent'",
-                status=400
-            )
-
-        if not isinstance(msg.get('text'), str):
-            return error_response(
-                code="invalid_input",
-                message=f"Message at index {i} must contain text",
-                status=400
-            )
-
-        if len(msg['text']) > MAX_MESSAGE_LENGTH:
-            return error_response(
-                code="payload_too_large",
-                message=f"Message at index {i} exceeds maximum length",
-                status=400
-            )
-
-    # -----------------------------
-    # Optional fields
-    # -----------------------------
-    customer_name = data.get('customer_name')
-    if customer_name and len(customer_name) > MAX_CUSTOMER_NAME_LENGTH:
-        return error_response(
-            code="payload_too_large",
-            message=f"Field 'customer_name' exceeds maximum length",
-            status=400
-        )
-
-    metadata = data.get("metadata", {})
-    attachments = metadata.get("attachments", []) if isinstance(metadata, dict) else []
-
-    if len(attachments) > MAX_ATTACHMENTS:
-        return error_response(
-            code="payload_too_large",
-            message=f"Too many attachments",
-            status=400
-        )
-
-    # -----------------------------
-    # Intent classification
-    # -----------------------------
-    classification = classify_intent(
-        subject=data["subject"],
-        latest_message=data["latest_message"],
-        conversation_history=conversation_history
-    )
-
-    # -----------------------------
-    # Draft generation
-    # -----------------------------
-    draft_result = {
-        "type": "full",
-        "response_text": generate_mock_draft(
-            data["subject"],
-            data["latest_message"],
-            classification["primary_intent"]
-        ),
-        "quality_metrics": {}
-    }
-
-    # -----------------------------
-    # Auto-send eligibility (SOURCE OF TRUTH)
-    # -----------------------------
-    auto_send_eligible = calculate_auto_send_eligible(
-        classification,
-        draft_result,
-        attachments
-    )
-
-    requires_review = not auto_send_eligible
 
     # -----------------------------
     # Response payload (v1.0)
