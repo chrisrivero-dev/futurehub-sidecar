@@ -448,7 +448,9 @@ class AISidecar {
     this.renderGuidance(data ? data.agent_guidance : null);
 
     // 2. Confidence & Risk
-    this.renderConfidenceRisk(data ? data.intent_classification : null);
+    this.renderConfidenceRisk(
+      data?.intent_classification || data?.agent_guidance || null,
+    );
 
     // 3. Intent Classification
     this.renderIntent(data ? data.intent_classification : null);
@@ -516,44 +518,68 @@ class AISidecar {
     if (recEl)
       recEl.textContent = (guidance && guidance.recommendation) || "N/A";
   }
-  renderConfidenceRisk(classification) {
-    if (!classification || !classification.confidence) return;
+  renderConfidenceRisk(input) {
+    if (!input) return;
 
-    const confidence = classification.confidence;
-    const percentage = Math.round((confidence.overall || 0) * 100);
+    // Normalize confidence
+    const confidence =
+      typeof input.confidence === "number"
+        ? input.confidence
+        : input.confidence?.overall;
 
-    // ✅ CONFIDENCE PERCENTAGE (KEEP THIS)
-    const pctEl = document.getElementById("confidence-percentage");
-    if (pctEl) pctEl.textContent = percentage + "%";
+    if (typeof confidence !== "number") return;
 
-    // ✅ CONFIDENCE LABEL (KEEP THIS)
-    const labelEl = document.getElementById("confidence-label");
-    if (labelEl) {
-      const label = (confidence.label || "unknown").toLowerCase();
-      labelEl.textContent = label.toUpperCase();
-      labelEl.className = `metric-badge confidence-${label}`;
-    }
+    const safety =
+      input.safety_mode ?? input.confidence?.safety ?? "acceptable";
 
-    // Ambiguity
+    const ambiguity = input.ambiguity ?? input.confidence?.ambiguity ?? "none";
+
+    // ---- DOM TARGETS (MATCH HTML EXACTLY) ----
+    const confidencePctEl = document.getElementById("confidence-percentage");
+    const confidenceLabelEl = document.getElementById("confidence-label");
+    const safetyEl = document.getElementById("safety-mode");
     const ambiguityEl = document.getElementById("ambiguity-status");
-    if (ambiguityEl) {
-      ambiguityEl.textContent = confidence.ambiguity_detected
-        ? "DETECTED"
-        : "NONE";
-      ambiguityEl.className = confidence.ambiguity_detected
-        ? "metric-badge badge-warning"
-        : "metric-badge badge-success";
+
+    if (!confidencePctEl || !confidenceLabelEl) return;
+
+    // ---- CONFIDENCE ----
+    const pct = Math.round(confidence * 100);
+    confidencePctEl.textContent = `${pct}%`;
+
+    confidenceLabelEl.textContent =
+      pct >= 85 ? "HIGH" : pct >= 65 ? "MEDIUM" : "LOW";
+
+    confidenceLabelEl.className = `metric-badge ${
+      pct >= 85 ? "badge-success" : pct >= 65 ? "badge-warning" : "badge-danger"
+    }`;
+
+    // ---- SAFETY MODE ----
+    if (safetyEl) {
+      safetyEl.textContent = safety.toUpperCase();
+      safetyEl.className = `metric-badge ${
+        safety === "safe" || safety === "acceptable"
+          ? "badge-success"
+          : "badge-danger"
+      }`;
     }
 
-    // Executive Summary (derived from same signals)
-    if (typeof renderExecutiveSummary === "function") {
-      renderExecutiveSummary({
-        resolutionLikely: (confidence.overall || 0) >= 0.7,
-        missingInfo: confidence.missing_info_detected === true,
+    // ---- AMBIGUITY ----
+    if (ambiguityEl) {
+      ambiguityEl.textContent = ambiguity.toUpperCase();
+      ambiguityEl.className = `metric-badge ${
+        ambiguity === "none" ? "badge-success" : "badge-warning"
+      }`;
+    }
+
+    // ---- EXECUTIVE SUMMARY (DERIVED, READ-ONLY) ----
+    if (typeof window.renderExecutiveSummary === "function") {
+      window.renderExecutiveSummary({
+        resolutionLikely: confidence >= 0.7,
+        missingInfo: input.missing_info_detected === true,
         autoSendEligible: this.autoSendEligible === true,
-        ambiguityDetected: confidence.ambiguity_detected === true,
-        safetyRisk: (classification.safety_mode || "").toLowerCase() !== "safe",
-        notes: classification.notes || "",
+        ambiguityDetected: ambiguity !== "none",
+        safetyRisk: safety !== "safe" && safety !== "acceptable",
+        notes: input.notes || "",
       });
     }
   }
