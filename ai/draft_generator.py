@@ -558,13 +558,21 @@ def generate_draft(
     # ---------------------------------------------
     # Unknown / fallback intent — safe LLM response
     # ---------------------------------------------
-    fallback_text = generate_llm_response(
+    fallback_result = generate_llm_response(
         system_prompt=(
             "You are a helpful customer support assistant. "
             "Respond clearly, accurately, and concisely."
         ),
         user_message=latest_message,
     )
+
+    fallback_text = fallback_result.get("text", "")
+
+    return {
+        "type": "full",
+        "response_text": fallback_text,
+    }
+
     # ---------------------------------------------
     # FINAL OUTPUT — SINGLE EXIT (REQUIRED)
     # ---------------------------------------------
