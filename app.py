@@ -9,54 +9,39 @@ import time
 import logging
 import os
 
+from dotenv import load_dotenv
+
 from intent_classifier import detect_intent
 from ai.draft_generator import generate_draft
 from routes.sidecar_ui import sidecar_ui_bp
 from ai.intent_normalization import normalize_intent
 from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
-from dotenv import load_dotenv
 from utils.build import build_id
-
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-import os
-from datetime import datetime
-
-APP_BUILD = os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GITHUB_SHA") or "unknown"
-APP_BUILD_TIME = os.getenv("APP_BUILD_TIME") or datetime.utcnow().isoformat() + "Z"
-
-
-
-
-
-# -----------------------------------
-# LLM kill switch
-# -----------------------------------
-def llm_allowed():
-    return os.getenv("LLM_ENABLED", "false").lower() == "true"
-
-
 app = Flask(__name__)
 app.register_blueprint(sidecar_ui_bp)
 
+# --------------------------------------------------
+# Build metadata
+# --------------------------------------------------
+APP_BUILD = os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GITHUB_SHA") or "unknown"
+APP_BUILD_TIME = os.getenv("APP_BUILD_TIME") or datetime.utcnow().isoformat() + "Z"
+
+# --------------------------------------------------
+# Health check
+# --------------------------------------------------
 @app.route("/", methods=["GET", "HEAD"], endpoint="railway_root", provide_automatic_options=False)
 def railway_root():
     return "OK", 200
 
-
-# Payload limits
-MAX_SUBJECT_LENGTH = 500
-MAX_MESSAGE_LENGTH = 10000
-MAX_CONVERSATION_HISTORY = 50
-MAX_CUSTOMER_NAME_LENGTH = 100
-MAX_ATTACHMENTS = 10
-MAX_PAYLOAD_BYTES = 1048576
-
-
+# --------------------------------------------------
+# Helpers
+# --------------------------------------------------
 def error_response(code, message, status=400, details=None):
     payload = {"success": False, "error": {"code": code, "message": message}}
     if details:
@@ -73,10 +58,13 @@ def get_confidence_label(confidence: float) -> str:
         return "low"
     return "very_low"
 
+
+# ==================================================
+# API — DRAFT GENERATION
+# ==================================================
 @app.route("/api/v1/draft", methods=["POST"])
 def draft():
     start_time = time.perf_counter()
-    autosend_confidence = 0.0
 
     try:
         data = request.get_json() or {}
@@ -86,29 +74,38 @@ def draft():
     subject = str(data.get("subject") or "").strip()
     latest_message = str(data.get("latest_message") or "").strip()
     conversation_history = data.get("conversation_history") or []
+    metadata = data.get("metadata") or {}
 
     if not subject or not latest_message:
         return error_response("invalid_input", "subject and latest_message are required")
 
-    metadata = data.get("metadata") or {}
-    attachments = metadata.get("attachments") or []
-
+    # --------------------------------------------------
+    # Intent classification
+    # --------------------------------------------------
     classification = detect_intent(
         latest_message,
         subject,
         metadata={
             "order_number": metadata.get("order_number"),
             "product": metadata.get("product"),
-            "attachments": attachments,
+            "attachments": metadata.get("attachments") or [],
         },
     )
 
-    # Shipping override
     combined = f"{subject} {latest_message}".lower()
+
+    # Shipping override
     if any(k in combined for k in ["shipping", "order", "tracking", "where is my"]):
         classification["primary_intent"] = "shipping_status"
         classification["confidence"]["intent_confidence"] = 0.90
         classification["confidence"]["ambiguity_detected"] = False
+
+    # Firmware override ✅
+    elif any(k in combined for k in ["firmware", "update", "flash", "version"]):
+        classification["primary_intent"] = "firmware_update_info"
+        classification["confidence"]["intent_confidence"] = 0.85
+        classification["confidence"]["ambiguity_detected"] = False
+
 
     normalized = normalize_intent(
         primary=classification["primary_intent"],
@@ -119,56 +116,49 @@ def draft():
     issue_type = normalized["issue_type"]
     tags = normalized["tags"]
 
-    agent_history = [
-        m["text"]
-        for m in conversation_history
-        if isinstance(m, dict) and m.get("role") == "agent"
-    ]
-    last_ai_draft = agent_history[-1] if agent_history else None
-
-    # ----------------------------
+    # --------------------------------------------------
     # Draft generation
-    # ----------------------------
-    draft_output = generate_draft(
+    # --------------------------------------------------
+    draft_result = generate_draft(
         latest_message=latest_message,
         intent=intent,
-        prior_draft=last_ai_draft,
-        prior_agent_messages=agent_history,
+        prior_draft=None,
+        prior_agent_messages=[],
     )
 
-    if isinstance(draft_output, dict):
-        draft_result = draft_output
-    else:
+    if not isinstance(draft_result, dict):
         draft_result = {
             "type": "full",
-            "response_text": str(draft_output),
-            "quality_metrics": {
-                "mode": "diagnostic",
-                "delta_enforced": True,
-                "fallback_used": False,
-            },
-            "canned_response_suggestion": None,
+            "response_text": str(draft_result),
         }
 
-    draft_text = draft_result.get("response_text", "")
+    # --------------------------------------------------
+    # HARD UI NORMALIZATION (FINAL — DO NOT REMOVE)
+    # response_text MUST be a STRING for JS
+    # --------------------------------------------------
+    rt = draft_result.get("response_text")
 
-    customer_name = data.get("customer_name")
-    if customer_name and customer_name not in draft_text:
-        draft_text = f"{customer_name}, {draft_text}"
-        draft_result["response_text"] = draft_text
+    if isinstance(rt, dict):
+        rt = rt.get("text", "")
+    elif rt is None:
+        rt = ""
+    else:
+        rt = str(rt)
 
+    rt = rt.strip()
+
+    if not rt:
+        rt = "I can help with that. Could you provide a bit more detail?"
+
+    draft_result["response_text"] = rt
+
+    # --------------------------------------------------
+    # Auto-send evaluation
+    # --------------------------------------------------
     confidence_overall = classification["confidence"]["intent_confidence"]
-    autosend_confidence = confidence_overall
-
-    # Missing info detection
-    last_customer_messages = [
-        m["text"]
-        for m in conversation_history
-        if isinstance(m, dict) and m.get("role") == "customer"
-    ][-2:]
 
     missing_information = detect_missing_information(
-        messages=last_customer_messages,
+        messages=[latest_message],
         intent={
             "primary": classification["primary_intent"],
             "confidence": confidence_overall,
@@ -176,34 +166,22 @@ def draft():
         mode="diagnostic",
         metadata=metadata,
     )
-    # -------------------------------------------------
-    # Safety mode — guaranteed definition
-    # -------------------------------------------------
-    safety_mode = classification.get("safety_mode")
 
-    if not safety_mode:
-        if intent in ("shipping_status", "shipping_eta", "firmware_update_info"):
-            safety_mode = "safe"
-        else:
-            safety_mode = "review_required"
-
-
-    # ----------------------------
-    # Auto-send evaluation (FIXED SIGNATURE)
-    # ----------------------------
     auto_send_result = evaluate_auto_send(
-         message=latest_message,
+        message=latest_message,
         intent=intent,
-        intent_confidence=autosend_confidence,
-        safety_mode=safety_mode,
-        draft_text=draft_result,
-        acceptance_failures=draft_result.get("quality_metrics", {}).get("acceptance_failures", []),
+        intent_confidence=confidence_overall,
+        safety_mode=classification.get("safety_mode") or "review_required",
+        draft_text=rt,
+        acceptance_failures=[],
         missing_information=missing_information,
     )
 
-
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
 
+    # --------------------------------------------------
+    # FINAL RESPONSE (SINGLE EXIT)
+    # --------------------------------------------------
     response = {
         "success": True,
         "version": "1.0",
@@ -216,10 +194,9 @@ def draft():
                 "label": get_confidence_label(confidence_overall),
                 "ambiguity_detected": classification["confidence"]["ambiguity_detected"],
             },
-            "safety_mode": classification.get("safety_mode"),
         },
         "draft": {
-            "type": draft_result["type"],
+            "type": "full",
             "response_text": draft_result["response_text"],
         },
         "auto_send": bool(auto_send_result.get("auto_send")),
