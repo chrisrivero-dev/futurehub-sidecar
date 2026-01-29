@@ -133,3 +133,12 @@
   padding-bottom: var(--spacing-xl);
   -webkit-overflow-scrolling: touch;
 }
+/* =====================================================
+   FORCE COLLAPSE BEHAVIOR (FINAL OVERRIDE)
+   ===================================================== */
+.sidecar-wrapper.sidecar-embedded.sidecar-collapsed {
+  width: 64px !important;
+  min-width: 64px !important;
+  max-width: 64px !important;
+  overflow: hidden !important;
+}
