@@ -50,11 +50,13 @@ app = Flask(__name__)
 app.register_blueprint(sidecar_ui_bp)
 # Near other blueprint registrations:
 
+# Insights (optional)
 try:
-    from routes import insights
-    app.register_blueprint(insights.insights_bp)
-except Exception as e:
-    logger.error(f"Insights blueprint failed to load: {e}")
+    from routes.insights import insights_bp
+    app.register_blueprint(insights_bp)
+except ImportError as e:
+    logger.warning(f"Insights blueprint not loaded: {e}")
+
     print("🔥 FINISHED insights import block")
 
 
