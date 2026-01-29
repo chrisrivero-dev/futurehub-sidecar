@@ -134,11 +134,20 @@
   -webkit-overflow-scrolling: touch;
 }
 /* =====================================================
-   FORCE COLLAPSE BEHAVIOR (FINAL OVERRIDE)
+   COLLAPSE: KEEP HEADER, HIDE BODY (FINAL)
    ===================================================== */
+.sidecar-wrapper.sidecar-embedded {
+  width: 360px;
+  transition: width 0.2s ease;
+}
+
 .sidecar-wrapper.sidecar-embedded.sidecar-collapsed {
-  width: 64px !important;
-  min-width: 64px !important;
-  max-width: 64px !important;
-  overflow: hidden !important;
+  width: 64px;
+}
+
+/* =====================================================
+   COLLAPSE: KEEP HEADER TRACK, HIDE BODY (FIXED)
+   ===================================================== */
+.sidecar-wrapper.sidecar-embedded.sidecar-collapsed #ai-assistant-panel> :not(.sidecar-header-track) {
+  display: none;
 }
