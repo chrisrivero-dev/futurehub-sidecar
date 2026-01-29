@@ -54,8 +54,10 @@ app.register_blueprint(sidecar_ui_bp)
 try:
     from routes.insights import insights_bp
     app.register_blueprint(insights_bp)
+    logger.info("Insights blueprint loaded")
 except ImportError as e:
-    logger.warning(f"Insights blueprint not loaded: {e}")
+    logger.warning(f"Insights blueprint not loaded (optional): {e}")
+
 
     print("🔥 FINISHED insights import block")
 
