@@ -162,3 +162,18 @@
 .sidecar-wrapper.sidecar-embedded.sidecar-collapsed .sidecar-content:not(.sidecar-header-track) {
   display: none !important;
 }
+
+/* =====================================================
+   COLLAPSE — FINAL, FORCE OVERRIDE
+   ===================================================== */
+.sidecar-wrapper.sidecar-embedded.sidecar-collapsed {
+  width: 64px !important;
+  min-width: 64px !important;
+  max-width: 64px !important;
+  overflow: hidden;
+}
+
+/* Hide everything except header track */
+.sidecar-wrapper.sidecar-embedded.sidecar-collapsed #ai-assistant-panel> :not(.sidecar-header-track) {
+  display: none !important;
+}
