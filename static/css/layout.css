@@ -144,10 +144,21 @@
 .sidecar-wrapper.sidecar-embedded.sidecar-collapsed {
   width: 64px;
 }
-
 /* =====================================================
-   COLLAPSE: KEEP HEADER TRACK, HIDE BODY (FIXED)
+   COLLAPSE — KEEP HEADER, HIDE ALL BODY (FINAL, CORRECT)
    ===================================================== */
-.sidecar-wrapper.sidecar-embedded.sidecar-collapsed #ai-assistant-panel> :not(.sidecar-header-track) {
-  display: none;
+
+.sidecar-wrapper.sidecar-embedded {
+  width: 360px;
+  transition: width 0.2s ease;
+}
+
+.sidecar-wrapper.sidecar-embedded.sidecar-collapsed {
+  width: 64px;
+  overflow: hidden;
+}
+
+/* Hide ALL sidecar content except header track */
+.sidecar-wrapper.sidecar-embedded.sidecar-collapsed .sidecar-content:not(.sidecar-header-track) {
+  display: none !important;
 }
