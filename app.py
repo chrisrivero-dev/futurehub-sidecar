@@ -1,3 +1,5 @@
+print("🔥 LOADED app.py FROM:", __file__)
+
 """
 FutureHub AI Sidecar (v1.0)
 POST /api/v1/draft endpoint with intent classification and draft generation
@@ -53,6 +55,8 @@ try:
     app.register_blueprint(insights.insights_bp)
 except Exception as e:
     logger.error(f"Insights blueprint failed to load: {e}")
+    print("🔥 FINISHED insights import block")
+
 
 
 # --------------------------------------------------
