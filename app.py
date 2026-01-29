@@ -2,12 +2,17 @@
 FutureHub AI Sidecar (v1.0)
 POST /api/v1/draft endpoint with intent classification and draft generation
 """
+import os
+import sys
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from flask import Flask, request, jsonify
 from datetime import datetime
 import time
 import logging
-import os
 import subprocess
 
 def deploy_info():
@@ -43,8 +48,12 @@ app = Flask(__name__)
 app.register_blueprint(sidecar_ui_bp)
 # Near other blueprint registrations:
 
-from routes.insights import insights_bp
-app.register_blueprint(insights_bp)
+try:
+    from routes.insights import insights_bp
+    app.register_blueprint(insights_bp)
+except Exception as e:
+    logger.error(f"Insights blueprint failed to load: {e}")
+
 
 # --------------------------------------------------
 # Build metadata
