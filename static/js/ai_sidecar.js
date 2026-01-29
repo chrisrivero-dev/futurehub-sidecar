@@ -100,21 +100,21 @@ class AISidecar {
     let isCollapsed = wrapper.classList.contains("sidecar-collapsed");
 
     toggleBtn.addEventListener("click", (e) => {
-  e.preventDefault();
+      e.preventDefault();
 
-  isCollapsed = !isCollapsed;
+      isCollapsed = !isCollapsed;
 
-  // 🔑 sync BOTH wrapper + body
-  wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
-  document.body.classList.toggle("sidecar-collapsed", isCollapsed);
+      // 🔑 sync BOTH wrapper + body
+      wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
+      document.body.classList.toggle("sidecar-collapsed", isCollapsed);
 
-  toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
+      toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
 
-  if (chevron) {
-    chevron.style.transform = isCollapsed ? "rotate(180deg)" : "";
-  }
-});
-
+      if (chevron) {
+        chevron.style.transform = isCollapsed ? "rotate(180deg)" : "";
+      }
+    });
+  } // ✅ CLOSE bindCollapseToggle()
 
   // -----------------------------
   // Init + event wiring
