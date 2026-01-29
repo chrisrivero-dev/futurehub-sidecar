@@ -87,12 +87,11 @@ class AISidecar {
   }
 
   // -----------------------------
-  // Collapse / Expand
+  // Collapse / Expand (FIXED)
   // -----------------------------
   bindCollapseToggle() {
     const toggleBtn = document.getElementById("collapse-toggle");
-    const wrapper = document.querySelector(".sidecar-wrapper");
-    const body = document.body;
+    const wrapper = document.querySelector(".sidecar-wrapper"); // ✅ CORRECT ELEMENT
 
     if (!toggleBtn || !wrapper) return;
 
@@ -104,9 +103,8 @@ class AISidecar {
 
       isCollapsed = !isCollapsed;
 
-      // 🔑 sync BOTH wrapper + body
+      // ✅ toggle ONLY the wrapper (CSS depends on this)
       wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
-      document.body.classList.toggle("sidecar-collapsed", isCollapsed);
 
       toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
 
@@ -114,7 +112,7 @@ class AISidecar {
         chevron.style.transform = isCollapsed ? "rotate(180deg)" : "";
       }
     });
-  } // ✅ CLOSE bindCollapseToggle()
+  }
 
   // -----------------------------
   // Init + event wiring
