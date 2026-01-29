@@ -49,8 +49,8 @@ app.register_blueprint(sidecar_ui_bp)
 # Near other blueprint registrations:
 
 try:
-    from routes.insights import insights_bp
-    app.register_blueprint(insights_bp)
+    from routes import insights
+    app.register_blueprint(insights.insights_bp)
 except Exception as e:
     logger.error(f"Insights blueprint failed to load: {e}")
 

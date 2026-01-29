@@ -91,17 +91,23 @@ class AISidecar {
   // -----------------------------
   bindCollapseToggle() {
     const toggleBtn = document.getElementById("collapse-toggle");
-    const wrapper = document.querySelector(".sidecar-wrapper");
+    const wrapper = document.getElementById("ai-assistant-panel");
+    const body = document.body;
+
     if (!toggleBtn || !wrapper) return;
 
     const chevron = toggleBtn.querySelector(".collapse-chevron");
-    let isCollapsed = false;
+    let isCollapsed = wrapper.classList.contains("sidecar-collapsed");
 
     toggleBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
+      e.preventDefault();
 
       isCollapsed = !isCollapsed;
+
+      // 🔒 Single source of truth
       wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
+      body.classList.toggle("sidecar-collapsed", isCollapsed);
+
       toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
 
       if (chevron) {
