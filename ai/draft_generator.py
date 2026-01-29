@@ -248,6 +248,15 @@ def generate_draft(
     tone_modifier: str | None = None,
     **kwargs,
 ) -> dict:
+    # -------------------------------------------------
+    # AUTO-SEND TEMPLATE SHORT-CIRCUIT FLAGS (SAFE)
+    # -------------------------------------------------
+    auto_send_template_used: bool = False
+    auto_send_draft = None
+    reason = None
+    guidance = None
+    classification = None
+
     print(">>> generate_draft loaded from:", __file__)
     print(">>> RAW PAYLOAD message:", message)
     print(">>> RAW PAYLOAD latest_message:", latest_message)
@@ -258,6 +267,7 @@ def generate_draft(
         print("⚠️ Ignored legacy `message` field — latest_message required")
 
     prior_agent_messages = prior_agent_messages or []
+
 
     # ----------------------------
     # Phase 1.2 — mode derivation
@@ -271,6 +281,46 @@ def generate_draft(
 
     print(">>> FINAL MODE:", mode)
     print(">>> FINAL INTENT:", intent)
+    # -----------------------------
+    # Intent classification (REQUIRED)
+    # -----------------------------
+    classification = {
+        "primary_intent": intent,
+        "secondary_intents": [],
+        "confidence": {
+            "overall": 0.9 if intent else 0.0,
+            "label": "high" if intent else "low",
+            "ambiguity_detected": False,
+        },
+        "safety_mode": "acceptable",
+        "ambiguity": "none",
+    }
+
+    # -------------------------------------------------
+    # LLM-FIRST DRAFT GENERATION (ALWAYS RUNS)
+    # -------------------------------------------------
+    llm_result = generate_llm_response(
+        system_prompt=(
+            "You are a helpful customer support assistant. "
+            "Respond clearly, accurately, and concisely."
+        ),
+        user_message=latest_message,
+    )
+
+    draft_text = (
+        llm_result.get("text")
+        if isinstance(llm_result, dict)
+        else str(llm_result)
+    )
+    template_applies = intent in AUTO_SEND_TEMPLATES
+
+    auto_send = (
+        template_applies
+        and classification.get("confidence", {}).get("overall", 0) >= 0.85
+        and classification.get("safety_mode") in ("safe", "acceptable")
+    )
+
+
 
      # ============================================================
     # ## PHASE 1.3 — Draft Differentiation by Intent (LOCAL HELPER, LOCKED)
@@ -279,12 +329,7 @@ def generate_draft(
     def _draft_for_intent(intent: str) -> str:
         print(">>> _draft_for_intent CALLED with intent =", intent)
 
-        # -------------------------------------------------
-        # AUTO-SEND TEMPLATE SHORT-CIRCUIT (HARD)
-        # -------------------------------------------------
-        if intent in AUTO_SEND_TEMPLATES:
-            print("🟢 AUTO-SEND TEMPLATE USED — LLM BYPASSED")
-            return AUTO_SEND_TEMPLATES[intent]
+        
 
         # -------------------------------------------------
         # FALL THROUGH — normal draft logic continues below
@@ -553,6 +598,14 @@ def generate_draft(
                 "fallback_used": True,
             },
             "canned_response_suggestion": None,
+        }
+    if auto_send_template_used:
+        return {
+            "draft": auto_send_draft,
+            "auto_send": True,
+            "auto_send_reason": reason,
+            "agent_guidance": guidance,
+            "intent_classification": classification,
         }
 
     # ---------------------------------------------

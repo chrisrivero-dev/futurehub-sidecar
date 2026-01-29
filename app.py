@@ -8,6 +8,20 @@ from datetime import datetime
 import time
 import logging
 import os
+import subprocess
+
+def deploy_info():
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        sha = "unknown"
+    print(f"🚀 DEPLOY SHA: {sha}")
+    print(f"🐍 PYTHON: {os.sys.version}")
+
+deploy_info()
 
 from dotenv import load_dotenv
 
@@ -18,6 +32,8 @@ from ai.intent_normalization import normalize_intent
 from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
 from utils.build import build_id
+from ai.explanations import build_decision_explanation
+
 
 load_dotenv()
 
@@ -25,6 +41,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.register_blueprint(sidecar_ui_bp)
+# Near other blueprint registrations:
+
+from routes.insights import insights_bp
+app.register_blueprint(insights_bp)
 
 # --------------------------------------------------
 # Build metadata
@@ -178,6 +198,44 @@ def draft():
     )
 
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
+    # -------------------------------
+    # Decision Explanation (SAFE)
+    # -------------------------------
+
+    decision_explanation = build_decision_explanation(
+        intent_data={
+            "primary_intent": (
+                draft_result
+                .get("intent_classification", {})
+                .get("primary_intent")
+            ),
+            "secondary_intents": (
+                draft_result
+                .get("intent_classification", {})
+                .get("secondary_intents", [])
+            ),
+            "keywords": [],
+        },
+        confidence_score=(
+            draft_result
+            .get("intent_classification", {})
+            .get("confidence", {})
+            .get("overall", 0.0)
+        ),
+        auto_send_decision=(
+            draft_result
+            .get("auto_send", False)
+        ),
+        safety_mode=(
+            draft_result
+            .get("intent_classification", {})
+            .get("safety_mode", "acceptable")
+        ),
+        missing_info=False,
+    )
+
+    draft_result["decision_explanation"] = decision_explanation
+
 
     # --------------------------------------------------
     # FINAL RESPONSE (SINGLE EXIT)
@@ -210,8 +268,11 @@ def draft():
             "issue_type": issue_type,
             "product": metadata.get("product") or "other",
             "tags": tags,
+            
         },
     }
+    response["decision_explanation"] = decision_explanation
+
 
     return jsonify(response), 200
 
