@@ -91,7 +91,7 @@ class AISidecar {
   // -----------------------------
   bindCollapseToggle() {
     const toggleBtn = document.getElementById("collapse-toggle");
-    const wrapper = document.getElementById("ai-assistant-panel");
+    const wrapper = document.querySelector(".sidecar-wrapper.sidecar-embedded");
 
     if (!toggleBtn || !wrapper) return;
 
