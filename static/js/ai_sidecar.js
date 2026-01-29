@@ -87,35 +87,33 @@ class AISidecar {
   }
 
   // -----------------------------
-  // Collapse / Expand (FIXED)
-  // -----------------------------
-  // -----------------------------
-  // Collapse / Expand (FINAL FIX)
+  // Collapse / Expand (SAFE)
   // -----------------------------
   bindCollapseToggle() {
     const toggleBtn = document.getElementById("collapse-toggle");
-    const wrapper = document.querySelector(".sidecar-wrapper");
+    const wrapper = document.getElementById("ai-assistant-panel");
 
     if (!toggleBtn || !wrapper) return;
 
-    // 🔒 PREVENT DOUBLE-BINDING
+    // 🔒 Prevent double-binding
     if (toggleBtn.dataset.bound === "true") return;
     toggleBtn.dataset.bound = "true";
 
     const chevron = toggleBtn.querySelector(".collapse-chevron");
-    let isCollapsed = wrapper.classList.contains("sidecar-collapsed");
 
     toggleBtn.addEventListener("click", (e) => {
       e.preventDefault();
+      e.stopPropagation();
 
-      isCollapsed = !isCollapsed;
+      const isCollapsed = wrapper.classList.toggle("sidecar-collapsed");
 
-      wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
       toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
 
       if (chevron) {
         chevron.style.transform = isCollapsed ? "rotate(180deg)" : "";
       }
+
+      console.log("🧷 collapse toggled:", isCollapsed);
     });
   }
 
