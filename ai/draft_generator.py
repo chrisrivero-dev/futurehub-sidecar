@@ -51,7 +51,8 @@ def enrich_with_knowledge(
     Phase 1.4 placeholder.
     Knowledge injection is disabled for now.
     """
-    return draft_text
+    draft_text = draft_text
+
 # ============================================================
 # ## PHASE 3.1 — Reasoning Style Control (HELPER)
 # ============================================================
@@ -82,11 +83,19 @@ def apply_reasoning_style(
             "restart",
             "reboot",
         ]
-        for word in forbidden:
-            if f"{word} " in draft_text.lower():
-                draft_text = draft_text.replace(word, "")
+        def apply_reasoning_style(draft_text, intent, mode):
+            # SAFETY GUARD — auto-send templates may skip LLM
+            if not draft_text or not isinstance(draft_text, str):
+                return draft_text
 
-    return draft_text
+            for word in REASONING_STRIP_WORDS:
+                if f"{word} " in draft_text.lower():
+                    draft_text = draft_text.replace(word, "")
+
+            return draft_text
+
+
+    draft_text = draft_text
 # ============================================================
 # ## PHASE 4.1 — Generic Opener Detector (HELPER)
 # ============================================================
@@ -152,7 +161,7 @@ def polish_draft_text(
 # ============================================================
 
 def draft_fails_acceptance_gate(
-    draft_text: str,
+    draft_text: str | None,
     intent: str | None,
     mode: str,
 ) -> list[str]:
@@ -163,6 +172,11 @@ def draft_fails_acceptance_gate(
 
     failures: list[str] = []
 
+    # ✅ HARD GUARD — prevents ALL current crashes
+    if not draft_text or not isinstance(draft_text, str):
+        failures.append("empty_draft")
+        return failures
+
     if not draft_text.strip():
         failures.append("empty_draft")
 
@@ -170,8 +184,6 @@ def draft_fails_acceptance_gate(
     if intent not in ("unknown_vague", None):
         if intent not in ("shipping_status", "firmware_update") and has_generic_opener(draft_text):
             failures.append("generic_opener")
-
-
 
     # 2️⃣ Diagnostic replies must ask something
     if mode == "diagnostic":
@@ -187,6 +199,7 @@ def draft_fails_acceptance_gate(
             failures.append("explanatory_contains_troubleshooting")
 
     return failures
+
 
 
 # -------------------------------------------------
@@ -233,7 +246,8 @@ def apply_draft_constraints(
         for phrase in forbidden_phrases:
             draft_text = draft_text.replace(phrase, "").strip()
 
-    return draft_text
+    draft_text = draft_text
+
 
 # ============================================================
 # PHASE 1.1 LOCKED — do not modify without tests
@@ -282,9 +296,14 @@ def generate_draft(
         # -------------------------------------------------
         # AUTO-SEND TEMPLATE SHORT-CIRCUIT (HARD)
         # -------------------------------------------------
+        auto_send_used = False
+        draft_text = None
+
         if intent in AUTO_SEND_TEMPLATES:
             print("🟢 AUTO-SEND TEMPLATE USED — LLM BYPASSED")
-            return AUTO_SEND_TEMPLATES[intent]
+            auto_send_used = True
+            draft_text = AUTO_SEND_TEMPLATES.get(intent) or ""
+
 
         # -------------------------------------------------
         # FALL THROUGH — normal draft logic continues below
@@ -554,42 +573,3 @@ def generate_draft(
             },
             "canned_response_suggestion": None,
         }
-
-    # ---------------------------------------------
-    # Unknown / fallback intent — safe LLM response
-    # ---------------------------------------------
-    fallback_text = generate_llm_response(
-        system_prompt=(
-            "You are a helpful customer support assistant. "
-            "Respond clearly, accurately, and concisely."
-        ),
-        user_message=latest_message,
-    )
-    # ---------------------------------------------
-    # FINAL OUTPUT — SINGLE EXIT (REQUIRED)
-    # ---------------------------------------------
-
-    if draft_text and isinstance(draft_text, str) and draft_text.strip():
-        return {
-            "type": "full",
-            "response_text": draft_text,
-            "quality_metrics": {
-                "mode": mode,
-                "delta_enforced": True,
-                "fallback_used": False,
-            },
-            "canned_response_suggestion": None,
-        }
-
-    # Otherwise, fallback
-    return {
-        "type": "full",
-        "response_text": fallback_text,
-        "quality_metrics": {
-            "mode": mode,
-            "delta_enforced": True,
-            "fallback_used": True,
-            "reason": "unknown_intent_llm_fallback",
-        },
-        "canned_response_suggestion": None,
-    }

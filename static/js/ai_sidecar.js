@@ -7,16 +7,16 @@
 // Helper text inserted by Suggested Actions
 // -------------------------------------
 const ACTION_SNIPPETS = {
-  "Request debug.log and getblockchaininfo output":
-    "To help narrow this down, could you please share your debug.log file and the output of `getblockchaininfo`?\n\n",
+  'Request debug.log and getblockchaininfo output':
+    'To help narrow this down, could you please share your debug.log file and the output of `getblockchaininfo`?\n\n',
 
-  "Review logs for error patterns":
+  'Review logs for error patterns':
     "Once we have the logs, we'll review them for any error patterns that could explain the behavior.\n\n",
 
-  "Look up order in admin system":
-    "Let me check the order details and see where things currently stand.\n\n",
+  'Look up order in admin system':
+    'Let me check the order details and see where things currently stand.\n\n',
 
-  "Provide accurate tracking information":
+  'Provide accurate tracking information':
     "I'll confirm the latest tracking information and share an update with you.\n\n",
 };
 
@@ -26,38 +26,38 @@ const ACTION_SNIPPETS = {
 // Actual dropdown content is loaded from /static/data/canned_responses.json
 // -------------------------------------
 const CANNED_RESPONSES = {
-  "Low or Zero Hashrate": {
-    intents: ["not_hashing", "low_hashrate"],
+  'Low or Zero Hashrate': {
+    intents: ['not_hashing', 'low_hashrate'],
   },
-  "Dashboard / Network Access Issues": {
-    intents: ["dashboard_access", "network_issue"],
+  'Dashboard / Network Access Issues': {
+    intents: ['dashboard_access', 'network_issue'],
   },
   "Node Sync Behavior (What's Normal)": {
-    intents: ["sync_delay", "setup_help"],
+    intents: ['sync_delay', 'setup_help'],
   },
-  "Firmware Update Instructions": {
-    intents: ["firmware_update"],
+  'Firmware Update Instructions': {
+    intents: ['firmware_update'],
   },
-  "Request for More Information": {
-    intents: ["general_support"],
+  'Request for More Information': {
+    intents: ['general_support'],
   },
 };
 
 class AISidecar {
   constructor() {
-    this.panel = document.getElementById("ai-assistant-panel");
-    this.form = document.getElementById("draft-request-form");
-    this.emptyState = document.getElementById("empty-state");
-    this.responseContainer = document.getElementById("response-container");
-    this.generateBtn = document.getElementById("generate-btn");
-    this.resetBtn = document.getElementById("reset-btn");
+    this.panel = document.getElementById('ai-assistant-panel');
+    this.form = document.getElementById('draft-request-form');
+    this.emptyState = document.getElementById('empty-state');
+    this.responseContainer = document.getElementById('response-container');
+    this.generateBtn = document.getElementById('generate-btn');
+    this.resetBtn = document.getElementById('reset-btn');
 
     this.draftTextarea =
-      document.getElementById("draft-text") ||
-      document.getElementById("draft-message-box");
+      document.getElementById('draft-text') ||
+      document.getElementById('draft-message-box');
 
-    this.cannedBtn = document.getElementById("canned-dropdown-btn");
-    this.cannedMenu = document.getElementById("canned-dropdown-menu");
+    this.cannedBtn = document.getElementById('canned-dropdown-btn');
+    this.cannedMenu = document.getElementById('canned-dropdown-menu');
 
     this.recommendedCannedTitle = null;
     this.cannedResponses = [];
@@ -73,16 +73,16 @@ class AISidecar {
   bindResetButton() {
     if (!this.resetBtn) return;
 
-    this.resetBtn.addEventListener("click", (e) => {
+    this.resetBtn.addEventListener('click', (e) => {
       e.stopPropagation();
 
       this.form?.reset();
-      this.responseContainer?.classList.add("hidden");
-      this.emptyState?.classList.remove("hidden");
-      document.getElementById("auto-send-card")?.classList.add("hidden");
+      this.responseContainer?.classList.add('hidden');
+      this.emptyState?.classList.remove('hidden');
+      document.getElementById('auto-send-card')?.classList.add('hidden');
 
       this.hideAutoSendCard();
-      this.showToast("Form cleared");
+      this.showToast('Form cleared');
     });
   }
 
@@ -90,24 +90,24 @@ class AISidecar {
   // Collapse / Expand
   // -----------------------------
   bindCollapseToggle() {
-    const toggleBtn = document.getElementById("collapse-toggle");
-    const wrapper = document.querySelector(".sidecar-wrapper");
+    const toggleBtn = document.getElementById('collapse-toggle');
+    const wrapper = document.querySelector('.sidecar-wrapper');
     if (!toggleBtn || !wrapper) return;
 
-    const chevron = toggleBtn.querySelector(".collapse-chevron");
+    const chevron = toggleBtn.querySelector('.collapse-chevron');
     let isCollapsed = false;
 
-    toggleBtn.addEventListener("click", (e) => {
+    toggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
 
       isCollapsed = !isCollapsed;
-      wrapper.classList.toggle("sidecar-collapsed", isCollapsed);
-      toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
+      wrapper.classList.toggle('sidecar-collapsed', isCollapsed);
+      toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
 
       if (chevron) {
         chevron.style.transform = isCollapsed
-          ? "rotate(180deg)"
-          : "rotate(0deg)";
+          ? 'rotate(180deg)'
+          : 'rotate(0deg)';
       }
     });
   }
@@ -118,7 +118,7 @@ class AISidecar {
   init() {
     // Form submission (prevent default, use JS)
     if (this.form) {
-      this.form.addEventListener("submit", (e) => {
+      this.form.addEventListener('submit', (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.generateDraft();
@@ -128,25 +128,25 @@ class AISidecar {
 
     // Generate button click
     if (this.generateBtn) {
-      this.generateBtn.addEventListener("click", (e) => {
+      this.generateBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        console.log("🔥 generateDraft() click");
+        console.log('🔥 generateDraft() click');
         this.generateDraft();
       });
     }
 
     // Copy draft
-    const copyBtn = document.getElementById("copy-draft-btn");
+    const copyBtn = document.getElementById('copy-draft-btn');
     if (copyBtn) {
-      copyBtn.addEventListener("click", () => this.copyDraft());
+      copyBtn.addEventListener('click', () => this.copyDraft());
     }
 
     // Insert draft (stub)
-    const insertBtn = document.getElementById("insert-draft-btn");
+    const insertBtn = document.getElementById('insert-draft-btn');
     if (insertBtn) {
-      insertBtn.addEventListener("click", () => {
-        this.showToast("Insert functionality coming soon");
+      insertBtn.addEventListener('click', () => {
+        this.showToast('Insert functionality coming soon');
       });
     }
 
@@ -155,13 +155,13 @@ class AISidecar {
 
     // Canned Responses dropdown open/close (wired ONCE)
     if (this.cannedBtn && this.cannedMenu) {
-      this.cannedBtn.addEventListener("click", (e) => {
+      this.cannedBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.toggleCannedDropdown();
       });
 
-      document.addEventListener("click", (e) => {
+      document.addEventListener('click', (e) => {
         if (!this.cannedBtn || !this.cannedMenu) return;
 
         const clickedInside =
@@ -179,33 +179,33 @@ class AISidecar {
   // Auto-Send Card Methods
   // -----------------------------
   showAutoSendCard(options = {}) {
-    const card = document.getElementById("auto-send-card");
+    const card = document.getElementById('auto-send-card');
     if (!card) return;
 
-    card.classList.remove("hidden");
+    card.classList.remove('hidden');
 
-    const reasonEl = document.getElementById("auto-send-reason");
+    const reasonEl = document.getElementById('auto-send-reason');
     if (reasonEl) {
       reasonEl.textContent =
-        options.reason || "This ticket qualifies for auto-send.";
+        options.reason || 'This ticket qualifies for auto-send.';
     }
 
-    const badgeEl = document.getElementById("auto-send-badge");
-    if (badgeEl) badgeEl.classList.remove("hidden");
+    const badgeEl = document.getElementById('auto-send-badge');
+    if (badgeEl) badgeEl.classList.remove('hidden');
 
     // 🔒 SINGLE SOURCE OF TRUTH
     this.autoSendEligible = true;
   }
 
   hideAutoSendCard() {
-    const card = document.getElementById("auto-send-card");
+    const card = document.getElementById('auto-send-card');
     if (card) {
-      card.classList.add("hidden");
+      card.classList.add('hidden');
     }
 
-    const badgeEl = document.getElementById("auto-send-badge");
+    const badgeEl = document.getElementById('auto-send-badge');
     if (badgeEl) {
-      badgeEl.classList.add("hidden");
+      badgeEl.classList.add('hidden');
     }
   }
 
@@ -214,14 +214,14 @@ class AISidecar {
   // -----------------------------
   async loadCannedResponses() {
     try {
-      const res = await fetch("/static/data/canned_responses.json");
-      if (!res.ok) throw new Error("Failed to load canned responses");
+      const res = await fetch('/static/data/canned_responses.json');
+      if (!res.ok) throw new Error('Failed to load canned responses');
 
       const data = await res.json();
       this.cannedResponses = Array.isArray(data) ? data : [];
       this.renderCannedResponses();
     } catch (err) {
-      console.error("Canned responses load error:", err);
+      console.error('Canned responses load error:', err);
     }
   }
 
@@ -246,15 +246,15 @@ class AISidecar {
   renderCannedResponses() {
     if (!this.cannedMenu) return;
 
-    this.cannedMenu.innerHTML = "";
+    this.cannedMenu.innerHTML = '';
 
     if (
       !Array.isArray(this.cannedResponses) ||
       this.cannedResponses.length === 0
     ) {
-      const empty = document.createElement("div");
-      empty.className = "help-text";
-      empty.textContent = "No canned responses available.";
+      const empty = document.createElement('div');
+      empty.className = 'help-text';
+      empty.textContent = 'No canned responses available.';
       this.cannedMenu.appendChild(empty);
       return;
     }
@@ -262,29 +262,29 @@ class AISidecar {
     for (let i = 0; i < this.cannedResponses.length; i++) {
       const item = this.cannedResponses[i];
 
-      const title = item?.title ? String(item.title) : "Untitled";
-      const category = item?.category ? String(item.category) : "";
-      const content = item?.content ? String(item.content) : "";
+      const title = item?.title ? String(item.title) : 'Untitled';
+      const category = item?.category ? String(item.category) : '';
+      const content = item?.content ? String(item.content) : '';
 
       // Recommended title is a TITLE, not an ID.
       const isRecommended =
         this.recommendedCannedTitle &&
         title === String(this.recommendedCannedTitle);
 
-      const entry = document.createElement("button");
-      entry.type = "button";
-      entry.className = `canned-item${isRecommended ? " recommended" : ""}`;
-      entry.setAttribute("role", "menuitem");
+      const entry = document.createElement('button');
+      entry.type = 'button';
+      entry.className = `canned-item${isRecommended ? ' recommended' : ''}`;
+      entry.setAttribute('role', 'menuitem');
       entry.dataset.cannedId = item?.id || title;
 
       entry.innerHTML = `
         <div class="canned-title">
-          ${isRecommended ? "★ " : ""}${title}
+          ${isRecommended ? '★ ' : ''}${title}
         </div>
         <div class="canned-meta">${category}</div>
       `;
 
-      entry.addEventListener("click", (e) => {
+      entry.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.insertCannedResponse({ title, content });
@@ -298,9 +298,9 @@ class AISidecar {
   insertCannedResponse(item) {
     if (!this.draftTextarea) return;
 
-    const current = this.draftTextarea.value || "";
-    const spacer = current.trim() ? "\n\n" : "";
-    this.draftTextarea.value = current + spacer + (item.content || "");
+    const current = this.draftTextarea.value || '';
+    const spacer = current.trim() ? '\n\n' : '';
+    this.draftTextarea.value = current + spacer + (item.content || '');
     this.draftTextarea.focus();
 
     this.showToast(`Inserted: ${item.title}`);
@@ -309,16 +309,16 @@ class AISidecar {
   toggleCannedDropdown() {
     if (!this.cannedMenu || !this.cannedBtn) return;
 
-    const isOpen = this.cannedBtn.getAttribute("aria-expanded") === "true";
-    this.cannedBtn.setAttribute("aria-expanded", String(!isOpen));
-    this.cannedMenu.classList.toggle("hidden", isOpen);
+    const isOpen = this.cannedBtn.getAttribute('aria-expanded') === 'true';
+    this.cannedBtn.setAttribute('aria-expanded', String(!isOpen));
+    this.cannedMenu.classList.toggle('hidden', isOpen);
   }
 
   closeCannedDropdown() {
     if (!this.cannedMenu || !this.cannedBtn) return;
 
-    this.cannedMenu.classList.add("hidden");
-    this.cannedBtn.setAttribute("aria-expanded", "false");
+    this.cannedMenu.classList.add('hidden');
+    this.cannedBtn.setAttribute('aria-expanded', 'false');
   }
 
   // -----------------------------
@@ -330,33 +330,33 @@ class AISidecar {
     const formData = new FormData(this.form);
 
     const payload = {
-      subject: formData.get("subject"),
-      latest_message: formData.get("latest_message"),
+      subject: formData.get('subject'),
+      latest_message: formData.get('latest_message'),
       conversation_history: [],
-      customer_name: formData.get("customer_name") || undefined,
+      customer_name: formData.get('customer_name') || undefined,
     };
 
     // Loading state
-    const originalHTML = this.generateBtn ? this.generateBtn.innerHTML : "";
+    const originalHTML = this.generateBtn ? this.generateBtn.innerHTML : '';
     if (this.generateBtn) {
       this.generateBtn.disabled = true;
-      this.generateBtn.innerHTML = "Generating…";
+      this.generateBtn.innerHTML = 'Generating…';
     }
 
     try {
-      const response = await fetch("/api/v1/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('/api/v1/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      const contentType = response.headers.get("content-type") || "";
+      const contentType = response.headers.get('content-type') || '';
 
-      if (!contentType.includes("application/json")) {
+      if (!contentType.includes('application/json')) {
         const text = await response.text();
-        console.error("Non-JSON response from /api/v1/draft:", text);
+        console.error('Non-JSON response from /api/v1/draft:', text);
 
-        this.showToast("Server error. Please try again.", "error");
+        this.showToast('Server error. Please try again.', 'error');
         return;
       }
 
@@ -365,17 +365,17 @@ class AISidecar {
       if (!response.ok) {
         throw new Error(
           (data && data.error && data.error.message) ||
-            "Failed to generate draft",
+            'Failed to generate draft'
         );
       }
 
-      console.log("FULL RESPONSE", data);
+      console.log('FULL RESPONSE', data);
       this.renderResponse(data);
     } catch (error) {
-      console.error("Draft error:", error);
+      console.error('Draft error:', error);
       this.showToast(
-        (error && error.message) || "Failed to generate draft",
-        "error",
+        (error && error.message) || 'Failed to generate draft',
+        'error'
       );
     } finally {
       if (this.generateBtn) {
@@ -401,20 +401,20 @@ class AISidecar {
   // -----------------------------
   renderResponse(data) {
     // Hide empty state
-    if (this.emptyState) this.emptyState.classList.add("hidden");
+    if (this.emptyState) this.emptyState.classList.add('hidden');
 
     // Show response container
     if (this.responseContainer) {
-      this.responseContainer.classList.remove("hidden");
+      this.responseContainer.classList.remove('hidden');
     }
     // -----------------------------
     // Auto-send visibility (read-only)
     // -----------------------------
     if (data?.auto_send === true) {
-      console.log("✅ Auto-send eligible:", data.auto_send_reason);
+      console.log('✅ Auto-send eligible:', data.auto_send_reason);
 
       this.showAutoSendCard({
-        reason: data.auto_send_reason || "Eligible for auto-send",
+        reason: data.auto_send_reason || 'Eligible for auto-send',
       });
     } else {
       this.hideAutoSendCard();
@@ -431,17 +431,17 @@ class AISidecar {
 
     // Show cards (if ids exist in DOM)
     const idsToShow = [
-      "agent-guidance-card",
-      "confidence-card",
-      "draft-card",
-      "actions-card",
-      "quick-replies-card",
-      "knowledge-card",
-      "conversation-card",
+      'agent-guidance-card',
+      'confidence-card',
+      'draft-card',
+      'actions-card',
+      'quick-replies-card',
+      'knowledge-card',
+      'conversation-card',
     ];
     for (let i = 0; i < idsToShow.length; i++) {
       const el = document.getElementById(idsToShow[i]);
-      if (el) el.classList.remove("hidden");
+      if (el) el.classList.remove('hidden');
     }
 
     // 1. Agent Guidance
@@ -449,7 +449,7 @@ class AISidecar {
 
     // 2. Confidence & Risk
     this.renderConfidenceRisk(
-      data?.intent_classification || data?.agent_guidance || null,
+      data?.intent_classification || data?.agent_guidance || null
     );
 
     // 3. Intent Classification
@@ -459,11 +459,11 @@ class AISidecar {
     if (data && data.draft) {
       this.renderDraft(data.draft, data.agent_guidance);
     } else {
-      console.warn("⚠️ No draft returned by backend", data);
+      console.warn('⚠️ No draft returned by backend', data);
 
       this.showToast(
-        data?.reason || "No draft was generated for this request",
-        "warning",
+        data?.reason || 'No draft was generated for this request',
+        'warning'
       );
     }
 
@@ -493,15 +493,15 @@ class AISidecar {
     // Scroll to top
     if (this.responseContainer && this.responseContainer.scrollIntoView) {
       this.responseContainer.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
+        behavior: 'smooth',
+        block: 'start',
       });
     }
   }
 
   renderGuidance(guidance) {
-    const badgesContainer = document.getElementById("guidance-badges");
-    let badges = "";
+    const badgesContainer = document.getElementById('guidance-badges');
+    let badges = '';
 
     if (guidance && guidance.auto_send_eligible) {
       badges += '<span class="badge badge-success">Auto-Send Eligible</span>';
@@ -511,34 +511,34 @@ class AISidecar {
     }
     if (badgesContainer) badgesContainer.innerHTML = badges;
 
-    const reasonEl = document.getElementById("guidance-reason");
-    const recEl = document.getElementById("guidance-recommendation");
+    const reasonEl = document.getElementById('guidance-reason');
+    const recEl = document.getElementById('guidance-recommendation');
 
-    if (reasonEl) reasonEl.textContent = (guidance && guidance.reason) || "N/A";
+    if (reasonEl) reasonEl.textContent = (guidance && guidance.reason) || 'N/A';
     if (recEl)
-      recEl.textContent = (guidance && guidance.recommendation) || "N/A";
+      recEl.textContent = (guidance && guidance.recommendation) || 'N/A';
   }
   renderConfidenceRisk(input) {
     if (!input) return;
 
     // Normalize confidence
     const confidence =
-      typeof input.confidence === "number"
+      typeof input.confidence === 'number'
         ? input.confidence
         : input.confidence?.overall;
 
-    if (typeof confidence !== "number") return;
+    if (typeof confidence !== 'number') return;
 
     const safety =
-      input.safety_mode ?? input.confidence?.safety ?? "acceptable";
+      input.safety_mode ?? input.confidence?.safety ?? 'acceptable';
 
-    const ambiguity = input.ambiguity ?? input.confidence?.ambiguity ?? "none";
+    const ambiguity = input.ambiguity ?? input.confidence?.ambiguity ?? 'none';
 
     // ---- DOM TARGETS (MATCH HTML EXACTLY) ----
-    const confidencePctEl = document.getElementById("confidence-percentage");
-    const confidenceLabelEl = document.getElementById("confidence-label");
-    const safetyEl = document.getElementById("safety-mode");
-    const ambiguityEl = document.getElementById("ambiguity-status");
+    const confidencePctEl = document.getElementById('confidence-percentage');
+    const confidenceLabelEl = document.getElementById('confidence-label');
+    const safetyEl = document.getElementById('safety-mode');
+    const ambiguityEl = document.getElementById('ambiguity-status');
 
     if (!confidencePctEl || !confidenceLabelEl) return;
 
@@ -547,19 +547,19 @@ class AISidecar {
     confidencePctEl.textContent = `${pct}%`;
 
     confidenceLabelEl.textContent =
-      pct >= 85 ? "HIGH" : pct >= 65 ? "MEDIUM" : "LOW";
+      pct >= 85 ? 'HIGH' : pct >= 65 ? 'MEDIUM' : 'LOW';
 
     confidenceLabelEl.className = `metric-badge ${
-      pct >= 85 ? "badge-success" : pct >= 65 ? "badge-warning" : "badge-danger"
+      pct >= 85 ? 'badge-success' : pct >= 65 ? 'badge-warning' : 'badge-danger'
     }`;
 
     // ---- SAFETY MODE ----
     if (safetyEl) {
       safetyEl.textContent = safety.toUpperCase();
       safetyEl.className = `metric-badge ${
-        safety === "safe" || safety === "acceptable"
-          ? "badge-success"
-          : "badge-danger"
+        safety === 'safe' || safety === 'acceptable'
+          ? 'badge-success'
+          : 'badge-danger'
       }`;
     }
 
@@ -567,19 +567,19 @@ class AISidecar {
     if (ambiguityEl) {
       ambiguityEl.textContent = ambiguity.toUpperCase();
       ambiguityEl.className = `metric-badge ${
-        ambiguity === "none" ? "badge-success" : "badge-warning"
+        ambiguity === 'none' ? 'badge-success' : 'badge-warning'
       }`;
     }
 
     // ---- EXECUTIVE SUMMARY (DERIVED, READ-ONLY) ----
-    if (typeof window.renderExecutiveSummary === "function") {
+    if (typeof window.renderExecutiveSummary === 'function') {
       window.renderExecutiveSummary({
         resolutionLikely: confidence >= 0.7,
         missingInfo: input.missing_info_detected === true,
         autoSendEligible: this.autoSendEligible === true,
-        ambiguityDetected: ambiguity !== "none",
-        safetyRisk: safety !== "safe" && safety !== "acceptable",
-        notes: input.notes || "",
+        ambiguityDetected: ambiguity !== 'none',
+        safetyRisk: safety !== 'safe' && safety !== 'acceptable',
+        notes: input.notes || '',
       });
     }
   }
@@ -587,15 +587,15 @@ class AISidecar {
   renderIntent(classification) {
     if (!classification) return;
 
-    const primaryEl = document.getElementById("primary-intent");
+    const primaryEl = document.getElementById('primary-intent');
     if (primaryEl) {
       primaryEl.textContent = this.formatIntent(classification.primary_intent);
     }
 
     const secondaryContainer = document.getElementById(
-      "secondary-intents-container",
+      'secondary-intents-container'
     );
-    const secondaryEl = document.getElementById("secondary-intents");
+    const secondaryEl = document.getElementById('secondary-intents');
 
     if (
       secondaryContainer &&
@@ -606,27 +606,27 @@ class AISidecar {
       secondaryEl.innerHTML = classification.secondary_intents
         .map(
           (intent) =>
-            `<span class="intent-chip">${this.formatIntent(intent)}</span>`,
+            `<span class="intent-chip">${this.formatIntent(intent)}</span>`
         )
-        .join("");
-      secondaryContainer.classList.remove("hidden");
+        .join('');
+      secondaryContainer.classList.remove('hidden');
     } else if (secondaryContainer) {
-      secondaryContainer.classList.add("hidden");
+      secondaryContainer.classList.add('hidden');
     }
 
-    const deviceAlert = document.getElementById("device-behavior-alert");
+    const deviceAlert = document.getElementById('device-behavior-alert');
     if (deviceAlert) {
       if (classification.device_behavior_detected) {
-        deviceAlert.classList.remove("hidden");
+        deviceAlert.classList.remove('hidden');
       } else {
-        deviceAlert.classList.add("hidden");
+        deviceAlert.classList.add('hidden');
       }
     }
 
     const actionsContainer = document.getElementById(
-      "attempted-actions-container",
+      'attempted-actions-container'
     );
-    const actionsEl = document.getElementById("attempted-actions");
+    const actionsEl = document.getElementById('attempted-actions');
 
     if (
       actionsContainer &&
@@ -634,81 +634,85 @@ class AISidecar {
       Array.isArray(classification.attempted_actions) &&
       classification.attempted_actions.length > 0
     ) {
-      actionsEl.textContent = classification.attempted_actions.join(", ");
-      actionsContainer.classList.remove("hidden");
+      actionsEl.textContent = classification.attempted_actions.join(', ');
+      actionsContainer.classList.remove('hidden');
     } else if (actionsContainer) {
-      actionsContainer.classList.add("hidden");
+      actionsContainer.classList.add('hidden');
     }
   }
 
   renderDraft(draft, guidance) {
-    console.log("RENDER DRAFT HIT", draft);
+    console.log('RENDER DRAFT HIT', draft);
 
     const textarea = this.draftTextarea;
     if (!textarea) {
-      console.warn("renderDraft: textarea not found");
+      console.warn('renderDraft: textarea not found');
       return;
     }
 
-    let text = "";
+    let text = '';
 
     // ✅ CASE 1 — Expected legacy shape
-    if (draft && typeof draft.response_text === "string") {
+    if (draft && typeof draft.response_text === 'string') {
       text = draft.response_text;
 
       // ✅ CASE 2 — Nested legacy shape
     } else if (
       draft &&
-      typeof draft.response_text === "object" &&
-      typeof draft.response_text.response_text === "string"
+      typeof draft.response_text === 'object' &&
+      typeof draft.response_text.response_text === 'string'
     ) {
       text = draft.response_text.response_text;
 
-      // ✅ CASE 3 — NEW backend shape (FIX)
-    } else if (draft && typeof draft.text === "string") {
-      text = draft.text;
+      // ✅ CASE 3 — NEW backend shape (FINAL, CORRECT)
+    } else if (
+      draft &&
+      typeof draft.response_text === 'object' &&
+      typeof draft.response_text.text === 'string'
+    ) {
+      text = draft.response_text.text;
 
       // ❌ Hard failure (debug only)
     } else {
-      console.error("❌ renderDraft: invalid draft payload", draft);
-      textarea.value = "";
+      console.error('❌ renderDraft: invalid draft payload', draft);
+      textarea.value = '';
       return;
     }
 
     textarea.value = text;
 
     // Badge logic (unchanged)
-    const sourceBadge = document.getElementById("draft-source-badge");
+    const sourceBadge = document.getElementById('draft-source-badge');
     if (sourceBadge && guidance) {
       if (guidance.auto_send_eligible) {
-        sourceBadge.textContent = "AI Draft · Auto-Send Ready";
-        sourceBadge.className = "badge badge-success";
+        sourceBadge.textContent = 'AI Draft · Auto-Send Ready';
+        sourceBadge.className = 'badge badge-success';
       } else if (guidance.requires_review) {
-        sourceBadge.textContent = "AI Draft · Review Required";
-        sourceBadge.className = "badge badge-warning";
+        sourceBadge.textContent = 'AI Draft · Review Required';
+        sourceBadge.className = 'badge badge-warning';
       } else {
-        sourceBadge.textContent = "AI Draft";
-        sourceBadge.className = "badge badge-neutral";
+        sourceBadge.textContent = 'AI Draft';
+        sourceBadge.className = 'badge badge-neutral';
       }
     }
   }
 
   renderFollowupQuestions(followups) {
-    const list = document.getElementById("suggested-actions-list");
+    const list = document.getElementById('suggested-actions-list');
     if (!list) return;
 
-    list.innerHTML = "";
+    list.innerHTML = '';
 
-    const section = document.getElementById("followup-section");
+    const section = document.getElementById('followup-section');
 
     // HARD GATE: hide section unless followups exist
     if (!Array.isArray(followups) || followups.length === 0) {
-      if (section) section.style.display = "none";
+      if (section) section.style.display = 'none';
       return;
     }
 
     // Enable section only when followups exist
-    if (section) section.style.display = "block";
+    if (section) section.style.display = 'block';
 
     followups.forEach((f, index) => {
       // ✅ MATCH BACKEND SHAPE EXACTLY
@@ -716,10 +720,10 @@ class AISidecar {
 
       if (!text) return;
 
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "followup-action";
-      item.setAttribute("data-preview", f.key || "");
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'followup-action';
+      item.setAttribute('data-preview', f.key || '');
 
       item.innerHTML = `
         <span class="followup-index">${index + 1}</span>
@@ -728,15 +732,15 @@ class AISidecar {
 
       item.title = text; // hover preview fallback
 
-      item.addEventListener("click", () => {
+      item.addEventListener('click', () => {
         if (!this.draftTextarea) return;
 
-        const cur = this.draftTextarea.value || "";
-        const spacer = cur && !cur.endsWith("\n") ? "\n\n" : "";
+        const cur = this.draftTextarea.value || '';
+        const spacer = cur && !cur.endsWith('\n') ? '\n\n' : '';
         this.draftTextarea.value = cur + spacer + text;
         this.draftTextarea.focus();
 
-        this.showToast("Inserted follow-up question");
+        this.showToast('Inserted follow-up question');
       });
 
       list.appendChild(item);
@@ -744,7 +748,7 @@ class AISidecar {
   }
 
   renderConversationContext() {
-    const messagesContainer = document.getElementById("conversation-messages");
+    const messagesContainer = document.getElementById('conversation-messages');
     if (!messagesContainer) return;
 
     messagesContainer.innerHTML =
@@ -753,94 +757,94 @@ class AISidecar {
 
   // ✅ Must exist, because init() calls it
   initCollapsibles() {
-    const toggles = document.querySelectorAll(".section-toggle");
+    const toggles = document.querySelectorAll('.section-toggle');
     toggles.forEach((toggle) => {
-      toggle.addEventListener("click", () => {
+      toggle.addEventListener('click', () => {
         const content = toggle.nextElementSibling;
-        toggle.classList.toggle("collapsed");
-        if (content) content.classList.toggle("collapsed");
+        toggle.classList.toggle('collapsed');
+        if (content) content.classList.toggle('collapsed');
       });
     });
   }
 
   copyDraft() {
-    const textarea = document.getElementById("draft-text");
+    const textarea = document.getElementById('draft-text');
     if (!textarea) return;
 
     textarea.select();
-    document.execCommand("copy");
-    this.showToast("Draft copied to clipboard");
+    document.execCommand('copy');
+    this.showToast('Draft copied to clipboard');
   }
 
   reset() {
     if (this.form) this.form.reset();
 
-    if (this.responseContainer) this.responseContainer.classList.add("hidden");
-    if (this.emptyState) this.emptyState.classList.remove("hidden");
+    if (this.responseContainer) this.responseContainer.classList.add('hidden');
+    if (this.emptyState) this.emptyState.classList.remove('hidden');
 
-    if (this.cannedMenu) this.cannedMenu.classList.add("hidden");
-    if (this.cannedBtn) this.cannedBtn.setAttribute("aria-expanded", "false");
+    if (this.cannedMenu) this.cannedMenu.classList.add('hidden');
+    if (this.cannedBtn) this.cannedBtn.setAttribute('aria-expanded', 'false');
 
-    if (this.draftTextarea) this.draftTextarea.value = "";
+    if (this.draftTextarea) this.draftTextarea.value = '';
 
     // Hide auto-send card on reset
     this.hideAutoSendCard();
 
-    this.showToast("Form cleared");
+    this.showToast('Form cleared');
   }
 
-  showToast(message, type = "success") {
-    const toast = document.getElementById("toast");
+  showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
     if (!toast) return;
 
     toast.textContent = message;
     toast.className = `toast toast-${type}`;
-    toast.classList.remove("hidden");
+    toast.classList.remove('hidden');
 
     setTimeout(() => {
-      toast.classList.add("hidden");
+      toast.classList.add('hidden');
     }, 3000);
   }
 
   formatIntent(intent) {
-    if (!intent) return "";
+    if (!intent) return '';
     return String(intent)
-      .split("_")
+      .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
+      .join(' ');
   }
 }
 
 // ------------------------------------
 // Follow-up questions toggle (Phase 3.1)
 // ------------------------------------
-document.addEventListener("click", (e) => {
-  if (!e.target.classList.contains("followups-toggle")) return;
+document.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('followups-toggle')) return;
 
   const list = e.target.nextElementSibling;
   if (!list) return;
 
-  list.classList.toggle("hidden");
+  list.classList.toggle('hidden');
 
-  e.target.textContent = list.classList.contains("hidden")
-    ? "▼ Follow-up questions (optional)"
-    : "▲ Follow-up questions (optional)";
+  e.target.textContent = list.classList.contains('hidden')
+    ? '▼ Follow-up questions (optional)'
+    : '▲ Follow-up questions (optional)';
 });
 /// Canned Responses Dropdown — click-away close ONLY
 (function () {
-  const dropdownBtn = document.getElementById("canned-dropdown-btn");
-  const dropdownMenu = document.getElementById("canned-dropdown-menu");
+  const dropdownBtn = document.getElementById('canned-dropdown-btn');
+  const dropdownMenu = document.getElementById('canned-dropdown-menu');
 
   if (!dropdownBtn || !dropdownMenu) return;
 
-  document.addEventListener("click", function (e) {
-    if (dropdownMenu.classList.contains("hidden")) return;
+  document.addEventListener('click', function (e) {
+    if (dropdownMenu.classList.contains('hidden')) return;
 
-    const container = dropdownBtn.closest(".canned-dropdown");
+    const container = dropdownBtn.closest('.canned-dropdown');
     if (container && container.contains(e.target)) return;
 
-    dropdownMenu.classList.add("hidden");
-    dropdownBtn.setAttribute("aria-expanded", "false");
+    dropdownMenu.classList.add('hidden');
+    dropdownBtn.setAttribute('aria-expanded', 'false');
   });
 })();
 function updateExecutiveSummary({
@@ -849,28 +853,28 @@ function updateExecutiveSummary({
   ambiguity,
   autoSendEligible,
 }) {
-  document.getElementById("exec-draft-outcome").textContent =
-    safety === "safe" ? "Ready to send" : "Needs review";
+  document.getElementById('exec-draft-outcome').textContent =
+    safety === 'safe' ? 'Ready to send' : 'Needs review';
 
-  document.getElementById("exec-recommended-action").textContent =
-    autoSendEligible ? "Auto-send" : "Manual review";
+  document.getElementById('exec-recommended-action').textContent =
+    autoSendEligible ? 'Auto-send' : 'Manual review';
 
-  document.getElementById("exec-auto-send-status").textContent =
-    autoSendEligible ? "Yes" : "No";
+  document.getElementById('exec-auto-send-status').textContent =
+    autoSendEligible ? 'Yes' : 'No';
 
-  document.getElementById("exec-primary-risk").textContent =
-    ambiguity === "high"
-      ? "Missing or unclear info"
-      : safety !== "safe"
-        ? "Policy / safety concern"
-        : "None detected";
+  document.getElementById('exec-primary-risk').textContent =
+    ambiguity === 'high'
+      ? 'Missing or unclear info'
+      : safety !== 'safe'
+        ? 'Policy / safety concern'
+        : 'None detected';
 
-  document.getElementById("exec-notes").textContent = autoSendEligible
-    ? "Response meets auto-send criteria."
-    : "Human review recommended before sending.";
+  document.getElementById('exec-notes').textContent = autoSendEligible
+    ? 'Response meets auto-send criteria.'
+    : 'Human review recommended before sending.';
 }
 const RALPH_WEEKLY_SUMMARY_URL =
-  "http://127.0.0.1:5000/insights/weekly-summary";
+  'http://127.0.0.1:5000/insights/weekly-summary';
 
 let cachedWeeklySummary = null;
 let lastWeeklyFetch = 0;
@@ -891,20 +895,20 @@ async function fetchWeeklySummary() {
       signal: controller.signal,
     });
 
-    if (!res.ok) throw new Error("Weekly summary fetch failed");
+    if (!res.ok) throw new Error('Weekly summary fetch failed');
 
     cachedWeeklySummary = await res.json();
     lastWeeklyFetch = now;
     return cachedWeeklySummary;
   } catch (err) {
-    console.warn("Weekly summary unavailable", err);
+    console.warn('Weekly summary unavailable', err);
     return null;
   } finally {
     clearTimeout(timeoutId);
   }
 }
 function renderWeeklySummary(summary) {
-  const body = document.getElementById("weekly-summary-body");
+  const body = document.getElementById('weekly-summary-body');
   if (!body) return;
 
   if (!summary) {
@@ -918,7 +922,7 @@ function renderWeeklySummary(summary) {
       <ul>
         ${summary.top_intents
           .map((i) => `<li>${i.intent} (${i.event_count})</li>`)
-          .join("")}
+          .join('')}
       </ul>
     </div>
 
@@ -927,7 +931,7 @@ function renderWeeklySummary(summary) {
       <ul>
         ${summary.intent_increases
           .map((i) => `<li>${i.intent}: +${i.delta}</li>`)
-          .join("")}
+          .join('')}
       </ul>
     </div>
 
@@ -936,7 +940,7 @@ function renderWeeklySummary(summary) {
       <ul>
         ${summary.intents_missing_approval
           .map((i) => `<li>${i.intent}</li>`)
-          .join("")}
+          .join('')}
       </ul>
     </div>
 
@@ -946,60 +950,139 @@ function renderWeeklySummary(summary) {
   `;
 }
 document
-  .getElementById("weekly-summary-toggle")
-  ?.addEventListener("click", async () => {
-    const body = document.getElementById("weekly-summary-body");
-    body.classList.toggle("hidden");
+  .getElementById('weekly-summary-toggle')
+  ?.addEventListener('click', async () => {
+    const body = document.getElementById('weekly-summary-body');
+    body.classList.toggle('hidden');
 
     if (!body.dataset.loaded) {
       const summary = await fetchWeeklySummary();
       renderWeeklySummary(summary);
-      body.dataset.loaded = "true";
+      body.dataset.loaded = 'true';
     }
   });
 function renderExecutiveSummary(signals) {
   if (!signals) return;
 
   // Draft Outcome
-  document.getElementById("exec-draft-outcome").textContent =
-    signals.resolutionLikely ? "Likely resolved" : "Follow-up expected";
+  document.getElementById('exec-draft-outcome').textContent =
+    signals.resolutionLikely ? 'Likely resolved' : 'Follow-up expected';
 
   // Recommended Action
-  document.getElementById("exec-recommended-action").textContent =
+  document.getElementById('exec-recommended-action').textContent =
     signals.missingInfo
-      ? "Request missing information"
-      : "Send draft as written";
+      ? 'Request missing information'
+      : 'Send draft as written';
 
   // Auto-Send
-  document.getElementById("exec-auto-send-status").textContent =
+  document.getElementById('exec-auto-send-status').textContent =
     signals.autoSendEligible
-      ? "Eligible (manual review allowed)"
-      : "Not eligible";
+      ? 'Eligible (manual review allowed)'
+      : 'Not eligible';
 
   // Primary Risk
-  document.getElementById("exec-primary-risk").textContent =
+  document.getElementById('exec-primary-risk').textContent =
     signals.ambiguityDetected
-      ? "Ambiguous customer intent"
+      ? 'Ambiguous customer intent'
       : signals.safetyRisk
-        ? "Policy / safety risk"
-        : "None detected";
+        ? 'Policy / safety risk'
+        : 'None detected';
 
   // Notes (short, human-readable)
-  document.getElementById("exec-notes").textContent =
-    signals.notes || "Based on current ticket signals";
+  document.getElementById('exec-notes').textContent =
+    signals.notes || 'Based on current ticket signals';
+}
+// Add this NEW function (does not modify existing functions)
+
+function renderDecisionExplanation(explanation) {
+  /**
+   * Render the decision explanation block.
+   * Pure presentation - no actions, no mutations.
+   */
+
+  const container = document.getElementById('decision-explanation-container');
+  if (!container || !explanation) return;
+
+  container.innerHTML = `
+    <div class="explanation-row">
+      <span class="explanation-label">Why This Intent:</span>
+      <span class="explanation-value">${escapeHtml(explanation.why_this_intent)}</span>
+    </div>
+    
+    <div class="explanation-row">
+      <span class="explanation-label">Auto-Send Decision:</span>
+      <span class="explanation-value">${escapeHtml(explanation.why_auto_send_allowed_or_blocked)}</span>
+    </div>
+    
+    <div class="explanation-row">
+      <span class="explanation-label">Confidence:</span>
+      <span class="explanation-value">
+        ${explanation.confidence_band.toUpperCase()} — ${escapeHtml(explanation.confidence_description)}
+      </span>
+    </div>
+    
+    <div class="explanation-row">
+      <span class="explanation-label">Safety Mode:</span>
+      <span class="explanation-value">${escapeHtml(explanation.safety_explanation)}</span>
+    </div>
+    
+    ${
+      explanation.missing_information.length > 0
+        ? `
+      <div class="explanation-row">
+        <span class="explanation-label">Missing Info:</span>
+        <span class="explanation-value">${explanation.missing_information.join(', ')}</span>
+      </div>
+    `
+        : ''
+    }
+    
+    <div class="explanation-signals">
+      <span class="explanation-label">Signals Used:</span>
+      ${explanation.key_signals_used
+        .map(
+          (signal) => `<span class="signal-badge">${escapeHtml(signal)}</span>`
+        )
+        .join('')}
+    </div>
+  `;
+
+  container.classList.remove('hidden');
 }
 
+// In the existing handleDraftResponse() function, ADD this call:
+
+function handleDraftResponse(data) {
+  // ... existing code ...
+
+  // NEW: Render decision explanation if present
+  if (data.decision_explanation) {
+    renderDecisionExplanation(data.decision_explanation);
+  }
+
+  // ... rest of existing code ...
+}
+
+// Add helper function if not already present:
+function escapeHtml(unsafe) {
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 // -------------------------------------
 // Initialize Sidecar (ONLY ONCE)
 // -------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
-  console.log("Sidecar JS loaded");
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('Sidecar JS loaded');
 
   // Initialize sidecar
   window.aiSidecar = new AISidecar();
 
   // Auto-run ONLY when query params exist
-  if (typeof window.aiSidecar.autoGenerateFromQueryParamsOnce === "function") {
+  if (typeof window.aiSidecar.autoGenerateFromQueryParamsOnce === 'function') {
     setTimeout(() => {
       window.aiSidecar.autoGenerateFromQueryParamsOnce();
     }, 200);
