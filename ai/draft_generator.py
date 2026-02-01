@@ -51,7 +51,7 @@ def enrich_with_knowledge(
     Phase 1.4 placeholder.
     Knowledge injection is disabled for now.
     """
-    draft_text = draft_text
+    return draft_text
 
 # ============================================================
 # ## PHASE 3.1 — Reasoning Style Control (HELPER)
@@ -66,36 +66,28 @@ def apply_reasoning_style(
     Keeps drafts thoughtful but not verbose or speculative.
     """
 
+    # SAFETY GUARD
+    if not draft_text or not isinstance(draft_text, str):
+        return draft_text if isinstance(draft_text, str) else ""
+
+    text = draft_text
+
     # Diagnostic replies should prefer questions over explanations
     if mode == "diagnostic":
-        if "why this happens" in draft_text.lower():
-            draft_text = draft_text.replace(
-                "why this happens",
-                "what we need to check next"
-            )
+        if "why this happens" in text.lower():
+            text = text.replace("why this happens", "what we need to check next")
 
     # Explanatory replies should not include troubleshooting steps
     if mode == "explanatory":
-        forbidden = [
-            "step",
-            "check",
-            "try",
-            "restart",
-            "reboot",
-        ]
-        def apply_reasoning_style(draft_text, intent, mode):
-            # SAFETY GUARD — auto-send templates may skip LLM
-            if not draft_text or not isinstance(draft_text, str):
-                return draft_text
+        forbidden = ["step", "check", "try", "restart", "reboot"]
+        lowered = text.lower()
+        for word in forbidden:
+            if f"{word} " in lowered:
+                # simple strip (safe, not perfect)
+                text = text.replace(word, "")
 
-            for word in REASONING_STRIP_WORDS:
-                if f"{word} " in draft_text.lower():
-                    draft_text = draft_text.replace(word, "")
+    return text
 
-            return draft_text
-
-
-    draft_text = draft_text
 # ============================================================
 # ## PHASE 4.1 — Generic Opener Detector (HELPER)
 # ============================================================
@@ -324,13 +316,13 @@ def generate_draft(
             )
         if intent == "diagnostic_generic":
             return (
-                "I see what you’re describing.\n\n"
-                "Based on what you’ve shared so far, the next step is to narrow down "
-                "where things are getting stuck.\n\n"
-                "Could you confirm:\n"
-                "1) What the device is currently showing on the dashboard\n"
-                "2) Whether this issue started recently or has been happening since setup\n"
+                "Thanks for explaining what you’re seeing — that helps.\n\n"
+                "Before we try any fixes, I want to make sure we’re looking in the right place.\n\n"
+                "Could you tell me:\n"
+                "• What the miner status shows right now (running, stopped, idle)\n"
+                "• Whether any error messages appear on the dashboard or in the logs\n"
             )
+
 
 
         if intent == "shipping_status":
@@ -453,6 +445,13 @@ def generate_draft(
     draft_intent = intent
     draft_text = _draft_for_intent(draft_intent)
 
+    # ✅ CRASH GUARD — ensure intent_result always exists
+    intent_result = {
+        "primary_intent": intent,
+        "secondary_intents": [],
+        "detected_keywords": [],
+    }
+
     # -------------------------------------------------
     # PHASE 1.4 — knowledge enrichment hook (LOCKED)
     # -------------------------------------------------
@@ -517,7 +516,7 @@ def generate_draft(
         intent=intent,
         tone_modifier=tone_modifier,
     )
-         # -------------------------------------------------
+    # -------------------------------------------------
     # PHASE 4 — Acceptance Gate (HARD)
     # -------------------------------------------------
     failures = draft_fails_acceptance_gate(
@@ -525,6 +524,43 @@ def generate_draft(
         intent=intent,
         mode=mode,
     )
+    # -------------------------------------------------
+    # HARD RULE: diagnostics must ask a question
+    # Prevents step-dumping and LLM "helpfulness"
+    # -------------------------------------------------
+    # HARD RULE: diagnostics must ask a question
+    if mode == "diagnostic" and (not isinstance(draft_text, str) or "?" not in draft_text):
+        return {
+            "type": "requires_review",
+            "response_text": (
+                "Thanks for explaining what’s happening.\n\n"
+                "Before we try any fixes, could you tell me:\n"
+                "• What the miner status currently shows\n"
+                "• Whether any error messages appear on the dashboard\n"
+            ),
+            "quality_metrics": {
+                "mode": mode,
+                "delta_enforced": True,
+                "fallback_used": False,
+            },
+            "canned_response_suggestion": None,
+        }
+
+
+    # -------------------------------------------------
+    # HARD GUARANTEE: draft_text must be a non-empty string
+    # This prevents 500s on hashing/setup/refund paths.
+    # -------------------------------------------------
+    if not isinstance(draft_text, str) or not draft_text.strip():
+        draft_text = generate_llm_response(
+            system_prompt=(
+                "You are a calm, practical customer support agent. "
+                "Answer the customer's message as best you can. "
+                "If you need more info, ask ONE clear follow-up question."
+            ),
+            user_message=latest_message,
+        ) or ""
+
         # -------------------------------------------------
     # HARD FALLBACK: unknown intent → clarifying question
     # -------------------------------------------------

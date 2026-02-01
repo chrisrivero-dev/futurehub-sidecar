@@ -353,24 +353,36 @@
   </ul>
 
   <!-- Weekly Executive Summary (collapsible, secondary) -->
-  <div class="weekly-summary-wrapper">
-    <button
-      class="weekly-summary-toggle"
-      id="weekly-summary-toggle"
-      type="button"
-    >
-      📊 Weekly Executive Summary
-      <span class="chevron">▾</span>
-    </button>
+<div class="weekly-summary-wrapper">
+  <button
+    class="weekly-summary-toggle"
+    id="weekly-summary-toggle"
+    type="button"
+  >
+    📊 Weekly Executive Summary
+    <span class="chevron">▾</span>
+  </button>
 
-    <div
-      class="weekly-summary-body hidden"
-      id="weekly-summary-body"
-    >
-      <p class="muted">Loading summary…</p>
-    </div>
+  <div
+    class="weekly-summary-body hidden"
+    id="weekly-summary-body"
+  >
+    <p class="muted">Loading summary…</p>
   </div>
+</div>
+
+<!-- Decision Explanation -->
+<section id="decision-explanation-section" class="sidecar-section hidden">
+  <h3 class="section-title">Why this response?</h3>
+  <p class="section-subtitle">
+    Explanation of how the assistant classified and handled this request.
+  </p>
+
+  <div id="decision-explanation-container"></div>
 </section>
+
+</section> <!-- ✅ CLOSE the main sidecar section here -->
+
 
 
             <!-- 8. Conversation Context -->

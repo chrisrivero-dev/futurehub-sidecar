@@ -63,3 +63,76 @@
   display: block;
   margin-bottom: 4px;
 }
+/* === Executive Summary – Approved Border Restore === */
+.executive-summary {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--surface-elevated);
+}
+
+.executive-summary + .executive-summary {
+  margin-top: 12px;
+}
+/* ============================================
+   DECISION EXPLANATION SECTION
+   ============================================ */
+
+#decision-explanation-section .section-subtitle {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  margin-top: -8px;
+  margin-bottom: 12px;
+}
+
+.explanation-row {
+  padding: 10px 0;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.explanation-row:last-child {
+  border-bottom: none;
+}
+
+.explanation-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.explanation-value {
+  font-size: 0.875rem;
+  color: #111827;
+  line-height: 1.5;
+}
+
+.explanation-signals {
+  padding: 10px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.signal-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+.empty-state-small {
+  padding: 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}

@@ -17,9 +17,19 @@ from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
 from dotenv import load_dotenv
 from utils.build import build_id
+# Near other blueprint registrations:
 
+from routes.insights import insights_bp
+
+# ✅ Ensure app exists BEFORE registering blueprints
+app = Flask(__name__)
+
+# Existing blueprint registrations (keep yours here)
+app.register_blueprint(sidecar_ui_bp)
+app.register_blueprint(insights_bp)
 
 load_dotenv()
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +50,6 @@ def llm_allowed():
     return os.getenv("LLM_ENABLED", "false").lower() == "true"
 
 
-app = Flask(__name__)
-app.register_blueprint(sidecar_ui_bp)
 
 @app.route("/", methods=["GET", "HEAD"], endpoint="railway_root", provide_automatic_options=False)
 def railway_root():
