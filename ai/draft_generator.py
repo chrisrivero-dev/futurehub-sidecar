@@ -528,16 +528,32 @@ def generate_draft(
     # HARD RULE: diagnostics must ask a question
     # Prevents step-dumping and LLM "helpfulness"
     # -------------------------------------------------
-    # HARD RULE: diagnostics must ask a question
-    if mode == "diagnostic" and (not isinstance(draft_text, str) or "?" not in draft_text):
-        return {
-            "type": "requires_review",
-            "response_text": (
-                "Thanks for explaining what’s happening.\n\n"
+    # HARD RULE: diagnostics must gather missing info
+    if mode == "diagnostic" and ("?" not in (draft_text or "")):
+        llm_question = generate_llm_response(
+            system_prompt=(
+                "You are a calm, professional technical support agent.\n"
+                "The customer is experiencing a problem, but there is missing information.\n"
+                "Ask ONE or TWO focused clarifying questions that would help diagnose the issue.\n"
+                "Do NOT suggest fixes yet.\n"
+                "Do NOT mention policies, warranties, or reflashing.\n"
+                "Be concise, reassuring, and specific."
+            ),
+            user_message=latest_message,
+        )
+
+        # SAFETY FALLBACK — LLM failed or returned junk
+        if not isinstance(llm_question, str) or "?" not in llm_question:
+            llm_question = (
+                "Thanks for explaining what's happening.\n\n"
                 "Before we try any fixes, could you tell me:\n"
                 "• What the miner status currently shows\n"
                 "• Whether any error messages appear on the dashboard\n"
-            ),
+            )
+
+        return {
+            "type": "requires_review",
+            "response_text": llm_question.strip(),
             "quality_metrics": {
                 "mode": mode,
                 "delta_enforced": True,
@@ -545,7 +561,6 @@ def generate_draft(
             },
             "canned_response_suggestion": None,
         }
-
 
     # -------------------------------------------------
     # HARD GUARANTEE: draft_text must be a non-empty string
@@ -561,7 +576,7 @@ def generate_draft(
             user_message=latest_message,
         ) or ""
 
-        # -------------------------------------------------
+    # -------------------------------------------------
     # HARD FALLBACK: unknown intent → clarifying question
     # -------------------------------------------------
     if intent == "unknown_vague":
@@ -575,7 +590,6 @@ def generate_draft(
         fallback_text = generate_llm_response(
             prompt=f"You are a helpful support agent.\n\n{latest_message}"
         )
-
 
         return {
             "type": "full",
@@ -609,3 +623,42 @@ def generate_draft(
             },
             "canned_response_suggestion": None,
         }
+
+    # ---------------------------------------------
+    # Unknown / fallback intent — safe LLM response
+    # ---------------------------------------------
+    fallback_text = generate_llm_response(
+        system_prompt=(
+            "You are a helpful customer support assistant. "
+            "Respond clearly, accurately, and concisely."
+        ),
+        user_message=latest_message,
+    )
+    # ---------------------------------------------
+    # FINAL OUTPUT — SINGLE EXIT (REQUIRED)
+    # ---------------------------------------------
+
+    if draft_text and isinstance(draft_text, str) and draft_text.strip():
+        return {
+            "type": "full",
+            "response_text": draft_text,
+            "quality_metrics": {
+                "mode": mode,
+                "delta_enforced": True,
+                "fallback_used": False,
+            },
+            "canned_response_suggestion": None,
+        }
+
+    # Otherwise, fallback
+    return {
+        "type": "full",
+        "response_text": fallback_text,
+        "quality_metrics": {
+            "mode": mode,
+            "delta_enforced": True,
+            "fallback_used": True,
+            "reason": "unknown_intent_llm_fallback",
+        },
+        "canned_response_suggestion": None,
+    }
