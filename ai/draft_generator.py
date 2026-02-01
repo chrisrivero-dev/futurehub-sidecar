@@ -438,12 +438,36 @@ def generate_draft(
         if any(indicator in text_lower for indicator in diagnostic_indicators):
             intent = "diagnostic_generic"
             intent_locked = True
+    # =================================================
+    # LLM FIRST PASS — SOURCE OF TRUTH
+    # =================================================
+
+    llm_text = generate_llm_response(
+        system_prompt=(
+            "You are a calm, professional customer support agent.\n"
+            "Answer the customer's message as helpfully and completely as possible.\n\n"
+            "If you need more information to proceed, ask ONE clear follow-up question.\n"
+            "If you do NOT need more information, provide a complete answer."
+        ),
+        user_message=latest_message,
+    )
+    if not isinstance(llm_text, str) or not llm_text.strip():
+        llm_text = ""
+
+
+
+    response_text = ""
+    needs_clarification = False
 
     # ----------------------------
     # Phase 2 — final draft intent (locked)
     # ----------------------------
     draft_intent = intent
-    draft_text = _draft_for_intent(draft_intent)
+
+    # LEGACY: rules may suggest intent, but may NOT override LLM text
+    # draft_text = _draft_for_intent(draft_intent)
+    draft_text = response_text
+
 
     # ✅ CRASH GUARD — ensure intent_result always exists
     intent_result = {
