@@ -93,10 +93,17 @@ def draft():
 
     subject = str(data.get("subject") or "").strip()
     latest_message = str(data.get("latest_message") or "").strip()
+
+    # 🔧 FIX: normalize payload for downstream code
+    message = str(data.get("message") or "").strip() or latest_message
+
     conversation_history = data.get("conversation_history") or []
 
     if not subject or not latest_message:
         return error_response("invalid_input", "subject and latest_message are required")
+
+    # --- everything else in your function continues here ---
+
 
     metadata = data.get("metadata") or {}
     attachments = metadata.get("attachments") or []

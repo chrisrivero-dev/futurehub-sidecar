@@ -42,6 +42,33 @@ UNSAFE_INTENTS = [
 
 # Keyword definitions with weights
 INTENT_KEYWORDS = {
+        "purchase_inquiry": {
+        "trigger_phrases": [
+            "want to purchase",
+            "want to buy",
+            "buy another",
+            "purchase another",
+            "order another",
+            "get another node",
+            "buy a node",
+            "purchase a node",
+        ],
+        "strong_signals": [
+            "purchase",
+            "buy",
+            "order",
+            "pricing",
+            "cost",
+            "price",
+            "availability",
+        ],
+        "weak_signals": [
+            "another",
+            "node",
+            "unit",
+        ],
+    },
+
     "shipping_status": {
         "trigger_phrases": [
             "where is my order",
@@ -221,29 +248,90 @@ INTENT_KEYWORDS = {
         ]
     }
 }
+def detect_attempted_actions(text):
+    """Detect steps customer has already tried"""
+    actions = []
+
+    already_tried_patterns = [
+        ("restart", [
+            "already tried restarting",
+            "already restarted",
+            "tried restarting",
+            "i restarted",
+            "already tried: restart",
+            "tried: restart",
+        ]),
+        ("firmware_update", [
+            "already updated firmware",
+            "updated firmware",
+            "tried updating",
+            "firmware update",
+            "updating firmware",
+            "tried: updating firmware",
+        ]),
+        ("pool_change", [
+            "changed pools",
+            "tried different pool",
+            "switched pools",
+            "changing pools",
+            "tried: changing pools",
+        ]),
+        ("check_logs", [
+            "checked logs",
+            "looked at logs",
+            "reviewed logs",
+            "tried: checking logs",
+        ]),
+    ]
+
+    for action, patterns in already_tried_patterns:
+        if any(p in text for p in patterns):
+            actions.append(action)
+
+    return actions
+
+
+def detect_tone(text):
+    """Detect emotional tone from message"""
+    panic_keywords = ["urgent", "asap", "emergency", "immediately", "losing money"]
+    frustration_keywords = ["still not working", "again", "multiple times", "frustrated"]
+    confusion_keywords = ["confused", "don't understand", "unclear", "not sure"]
+
+    if any(k in text for k in panic_keywords) or text.count("!") >= 3:
+        return "panic"
+    if any(k in text for k in frustration_keywords):
+        return "frustration"
+    if any(k in text for k in confusion_keywords):
+        return "confusion"
+
+    return "neutral"
+
+
+def calculate_max_possible_score(intent):
+    """Calculate theoretical max score for an intent"""
+    keywords = INTENT_KEYWORDS.get(intent, {})
+
+    max_score = 0.0
+    max_score += len(keywords.get("trigger_phrases", [])) * 4.0
+    max_score += len(keywords.get("strong_signals", [])) * 2.0
+    max_score += len(keywords.get("weak_signals", [])) * 1.0
+
+    return max_score if max_score > 0 else 10.0
 
 # PHASE 1.2 LOCKED — setup_help hard detection
 # Do not modify without updating tests
-
 def detect_intent(subject, message, metadata=None):
     """
     Classify intent based on keywords and signals.
-
-    Args:
-        subject: Ticket subject line
-        message: Latest customer message
-        metadata: Optional metadata dict
-
-    Returns:
-        dict with intent classification results
     """
-    # Combine subject and message for analysis (None-safe)
-    text = f"{(subject or '').strip()} {(message or '').strip()}".lower()
 
-    # -------------------------------------------------
-    # PHASE 1.2 — setup_help hard detection (LOCKED)
-    # -------------------------------------------------
-    # Normalize smart quotes and apostrophes (U+2019 etc.)
+    # -----------------------------
+    # Normalize input
+    # -----------------------------
+    subject = (subject or "").strip()
+    message = (message or "").strip()
+    text = f"{subject} {message}".lower()
+
     text = (
         text.replace("’", "'")
             .replace("‘", "'")
@@ -251,168 +339,58 @@ def detect_intent(subject, message, metadata=None):
             .replace("”", '"')
     )
 
-    setup_help_phrases = [
-        "apollo.local",
-        "futurebit.local",
-        "doesn't load",
-        "doesnt load",
-        "won't load",
-        "wont load",
-        "can't access",
-        "cannot access",
-        "dashboard won't load",
-        "dashboard doesnt load",
-        "dashboard doesn't load",
-    ]
+    attempted_actions = detect_attempted_actions(text)
+    device_behavior_detected = False
 
-    if any(phrase in text for phrase in setup_help_phrases):
-        return {
-            "primary_intent": "setup_help",
-            "secondary_intents": [],
-            "confidence": {
-                "intent_confidence": 0.90,
-                "ambiguity_detected": False,
-            },
-            "tone_modifier": "neutral",
-            "safety_mode": "safe",
-            "device_behavior_detected": False,
-            "attempted_actions": [],
-            "scores": {
-                "setup_help": 5,
-                "shipping_status": 0,
-                "not_hashing": 0,
-                "sync_delay": 0,
-                "general_question": 0,
-            },
-        }
-
+    # -----------------------------
     # Initialize scores
+    # -----------------------------
     scores = {intent: 0.0 for intent in INTENTS}
 
-    # Check for device behavior keywords (overrides informational intents)
-    device_behavior_keywords = [
-        "0 h/s", "not hashing", "won't load", "won't boot",
-        "crashing", "not working", "stopped", "stuck"
-    ]
-    device_behavior_detected = any(kw in text for kw in device_behavior_keywords)
-
-    # Score each intent
     for intent, keywords in INTENT_KEYWORDS.items():
         score = 0.0
 
-    # Trigger phrases (highest weight)
-    for phrase in keywords.get("trigger_phrases", []):
-        if phrase in text:
-            score += 4.0
+        for phrase in keywords.get("trigger_phrases", []):
+            if phrase in text:
+                score += 4.0
 
-    # Strong signals
-    for word in keywords.get("strong_signals", []):
-        if word in text:
-            score += 2.0
+        for word in keywords.get("strong_signals", []):
+            if word in text:
+                score += 2.0
 
-    # Weak signals
-    for word in keywords.get("weak_signals", []):
-        if word in text:
-            score += 1.0
+        for word in keywords.get("weak_signals", []):
+            if word in text:
+                score += 1.0
 
-    scores[intent] = score
-    print(f"DEBUG score[{intent}] =", score)
+        scores[intent] = score
 
-
-
-
-    # Apply device behavior override
-    if device_behavior_detected:
-        # Boost technical intents
-        for intent in UNSAFE_INTENTS:
-            scores[intent] *= 1.15
-        # Reduce informational intents
-        for intent in ["general_question", "shipping_status"]:
-            scores[intent] *= 0.85
-
-    # Check for order number (boosts shipping_status)
-    if metadata and metadata.get("order_number"):
-        scores["shipping_status"] += 2.0
-
-    # Check for attachments (boosts diagnostic intents)
-    if metadata and metadata.get("attachments"):
-        for intent in UNSAFE_INTENTS:
-            scores[intent] += 2.0
-
-    # Detect already-tried steps
-    attempted_actions = detect_attempted_actions(text)
-    if len(attempted_actions) >= 2:
-        # Boost diagnostic intents
-        for intent in UNSAFE_INTENTS:
-            scores[intent] *= 1.10
-        # Reduce setup_help
-        scores["setup_help"] *= 0.85
-
-    # Find primary intent
-    max_score = max(scores.values())
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-    # If max score too low, force unknown_vague
-    if max_score < 3.0:
+    # -----------------------------
+    # Determine primary intent
+    # -----------------------------
+    primary_intent, max_score = sorted_scores[0]
+
+    if max_score < 2.0:
         primary_intent = "unknown_vague"
-        intent_confidence = max_score / 10.0  # Low confidence
+        intent_confidence = 0.2
         ambiguity_detected = False
     else:
-        # Check for ambiguity (multiple intents close together)
-        top_two_diff = sorted_scores[0][1] - sorted_scores[1][1]
+        intent_confidence = min(
+            scores[primary_intent] / calculate_max_possible_score(primary_intent),
+            1.0,
+        )
+        ambiguity_detected = False
 
-        # Define intent priority for tie-breaking
-        INTENT_PRIORITY = [
-            "warranty_rma",
-            "shipping_status",
-            "firmware_issue",
-            "not_hashing",
-            "sync_delay",
-            "performance_issue",
-            "setup_help",
-            "general_question",
-            "unknown_vague"
-        ]
-
-        # If tied or very close, use priority order
-        if top_two_diff < 1.0:
-            top_score = sorted_scores[0][1]
-            tied_intents = [
-                i for i, s in sorted_scores
-                if abs(s - top_score) < 1.0
-            ]
-
-            primary_intent = None
-            for pi in INTENT_PRIORITY:
-                if pi in tied_intents:
-                    primary_intent = pi
-                    break
-            if primary_intent is None:
-                primary_intent = sorted_scores[0][0]
-
-            intent_confidence = min(
-                scores[primary_intent] / calculate_max_possible_score(primary_intent),
-                1.0
-            )
-            ambiguity_detected = len(tied_intents) > 1
-        else:
-            primary_intent = sorted_scores[0][0]
-            intent_confidence = min(
-                scores[primary_intent] / calculate_max_possible_score(primary_intent),
-                1.0
-            )
-            ambiguity_detected = False
-
-    # Detect tone modifier
+    # -----------------------------
+    # Post-classification metadata
+    # -----------------------------
     tone_modifier = detect_tone(text)
-
-    # Determine safety mode
     safety_mode = "unsafe" if primary_intent in UNSAFE_INTENTS else "safe"
 
-    # Build secondary intents (other high-scoring intents)
     secondary_intents = [
-        i for i, s in sorted_scores[1:3]
-        if s >= 3.0 and i != primary_intent
+        intent for intent, score in sorted_scores[1:3]
+        if score >= 3.0 and intent != primary_intent
     ]
 
     return {
@@ -420,64 +398,14 @@ def detect_intent(subject, message, metadata=None):
         "secondary_intents": secondary_intents,
         "confidence": {
             "intent_confidence": round(intent_confidence, 2),
-            "ambiguity_detected": ambiguity_detected
+            "ambiguity_detected": ambiguity_detected,
         },
         "tone_modifier": tone_modifier,
         "safety_mode": safety_mode,
         "device_behavior_detected": device_behavior_detected,
         "attempted_actions": attempted_actions,
-        "scores": {k: round(v, 1) for k, v in sorted_scores[:5]}
+        "scores": {
+            intent: round(score, 1)
+            for intent, score in sorted_scores[:5]
+        },
     }
-
-
-def detect_attempted_actions(text):
-    """Detect steps customer has already tried"""
-    actions = []
-    
-    already_tried_patterns = [
-        ("restart", ["already tried restarting", "already restarted", "tried restarting", "i restarted", "already tried: restart", "tried: restart"]),
-        ("firmware_update", ["already updated firmware", "updated firmware", "tried updating", "firmware update", "updating firmware", "tried: updating firmware"]),
-        ("pool_change", ["changed pools", "tried different pool", "switched pools", "changing pools", "tried: changing pools"]),
-        ("check_logs", ["checked logs", "looked at logs", "reviewed logs", "tried: checking logs"])
-    ]
-    
-    for action, patterns in already_tried_patterns:
-        if any(pattern in text for pattern in patterns):
-            actions.append(action)
-    
-    return actions
-
-
-def detect_tone(text):
-    """Detect emotional tone from message"""
-    # Panic indicators
-    panic_keywords = ["urgent", "asap", "emergency", "immediately", "losing money"]
-    if any(kw in text for kw in panic_keywords) or text.count("!") >= 3:
-        return "panic"
-    
-    # Frustration indicators
-    frustration_keywords = ["still not working", "again", "multiple times", "frustrated"]
-    if any(kw in text for kw in frustration_keywords):
-        return "frustration"
-    
-    # Confusion indicators
-    confusion_keywords = ["confused", "don't understand", "unclear", "not sure"]
-    if any(kw in text for kw in confusion_keywords):
-        return "confusion"
-    
-    return "neutral"
-
-
-def calculate_max_possible_score(intent):
-    """Calculate theoretical max score for an intent"""
-    keywords = INTENT_KEYWORDS.get(intent, {})
-    
-    max_score = 0
-    max_score += len(keywords.get("trigger_phrases", [])) * 3.0
-    max_score += len(keywords.get("strong_signals", [])) * 2.0
-    max_score += len(keywords.get("weak_signals", [])) * 1.0
-    
-    # Add typical metadata bonuses
-    max_score += 4.0  # Attachments, order numbers, etc.
-    
-    return max_score if max_score > 0 else 15.0  # Default if no keywords
