@@ -3,6 +3,9 @@ Intent Classification Module
 Rule-based, deterministic intent detection for support tickets
 """
 
+print(">>> intent_classifier loaded from:", __file__)
+
+
 # Intent taxonomy (9 intents)
 INTENTS = [
     "shipping_status",
@@ -11,6 +14,7 @@ INTENTS = [
     "sync_delay",
     "firmware_issue",
     "firmware_update",
+    "purchase_inquiry",
     "performance_issue",
     "warranty_rma",
     "general_question",
@@ -21,7 +25,8 @@ INTENTS = [
 SAFE_INTENTS = [
     "shipping_status",
     "setup_help",
-    "firmware_update",   # ✅ SAFE + AUTO-SEND ELIGIBLE
+    "firmware_update",
+    "purchase_inquiry",  # ✅ SAFE + AUTO-SEND ELIGIBLE
     "general_question",
     "warranty_rma"
 ]
@@ -40,7 +45,9 @@ INTENT_KEYWORDS = {
     "shipping_status": {
         "trigger_phrases": [
             "where is my order",
-            "where's my order", 
+            "where's my order",
+            "purchase_inquiry"
+            
             "track my order",
             "shipping status",
             "delivery status",
@@ -293,22 +300,26 @@ def detect_intent(subject, message, metadata=None):
     for intent, keywords in INTENT_KEYWORDS.items():
         score = 0.0
 
-        # Trigger phrases (3.0 points each)
-        for phrase in keywords.get("trigger_phrases", []):
-            if phrase in text:
-                score += 3.0
+    # Trigger phrases (highest weight)
+    for phrase in keywords.get("trigger_phrases", []):
+        if phrase in text:
+            score += 4.0
 
-        # Strong signals (2.0 points each)
-        for signal in keywords.get("strong_signals", []):
-            if signal in text:
-                score += 2.0
+    # Strong signals
+    for word in keywords.get("strong_signals", []):
+        if word in text:
+            score += 2.0
 
-        # Weak signals (1.0 point each)
-        for signal in keywords.get("weak_signals", []):
-            if signal in text:
-                score += 1.0
+    # Weak signals
+    for word in keywords.get("weak_signals", []):
+        if word in text:
+            score += 1.0
 
-        scores[intent] = score
+    scores[intent] = score
+    print(f"DEBUG score[{intent}] =", score)
+
+
+
 
     # Apply device behavior override
     if device_behavior_detected:
