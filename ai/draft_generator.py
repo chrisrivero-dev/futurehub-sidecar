@@ -151,7 +151,6 @@ def polish_draft_text(
 # ============================================================
 # ## PHASE 4.2 — Draft Acceptance Gate (HARD)
 # ============================================================
-
 def draft_fails_acceptance_gate(
     draft_text: str | None,
     intent: str | None,
@@ -164,26 +163,38 @@ def draft_fails_acceptance_gate(
 
     failures: list[str] = []
 
-    # ✅ HARD GUARD — prevents ALL current crashes
+    # ----------------------------------
+    # 0️⃣ Hard guards
+    # ----------------------------------
     if not draft_text or not isinstance(draft_text, str):
         failures.append("empty_draft")
         return failures
 
     if not draft_text.strip():
         failures.append("empty_draft")
+        return failures
 
-    # 1️⃣ Generic opener is NOT allowed for concrete intents
+    # ----------------------------------
+    # 1️⃣ Generic opener rules
+    # ----------------------------------
+    # Concrete intents must not start generic
+   # 1️⃣ Generic opener is NOT allowed for concrete intents
     if intent not in ("unknown_vague", None):
-        if intent not in ("shipping_status", "firmware_update") and has_generic_opener(draft_text):
+        if intent not in ("shipping_status", "firmware_update", "purchase_inquiry") \
+        and has_generic_opener(draft_text):
             failures.append("generic_opener")
 
+
+    # ----------------------------------
     # 2️⃣ Diagnostic replies must ask something
+    # ----------------------------------
     if mode == "diagnostic":
         if "?" not in draft_text:
             failures.append("diagnostic_no_questions")
 
-    # 3️⃣ Explanatory replies must not include troubleshooting
-    # Shipping status and firmware update are allowed to explain process
+    # ----------------------------------
+    # 3️⃣ Explanatory replies must not troubleshoot
+    # ----------------------------------
     if mode == "explanatory" and intent not in ("shipping_status", "firmware_update"):
         forbidden = ["step", "check", "try", "restart", "reboot"]
         lowered = draft_text.lower()
@@ -191,7 +202,6 @@ def draft_fails_acceptance_gate(
             failures.append("explanatory_contains_troubleshooting")
 
     return failures
-
 
 
 # -------------------------------------------------
@@ -258,22 +268,25 @@ def generate_draft(
     print(">>> RAW PAYLOAD message:", message)
     print(">>> RAW PAYLOAD latest_message:", latest_message)
 
+    # 🔧 Normalize message sources (THIS WAS MISSING)
+    if not latest_message and message:
+        latest_message = message
+
     text = (latest_message or "").strip()
 
-    if not text and message:
-        print("⚠️ Ignored legacy `message` field — latest_message required")
 
     prior_agent_messages = prior_agent_messages or []
 
     # ----------------------------
     # Phase 1.2 — mode derivation
     # ----------------------------
-    if intent == "shipping_status":
+    if intent in ("shipping_status", "purchase_inquiry"):
         mode = "explanatory"
     elif intent in ("setup_help", "sync_delay", "not_hashing"):
         mode = "diagnostic"
     else:
         mode = mode or "diagnostic"
+
 
     print(">>> FINAL MODE:", mode)
     print(">>> FINAL INTENT:", intent)
