@@ -109,8 +109,8 @@ def draft():
     attachments = metadata.get("attachments") or []
 
     classification = detect_intent(
+         subject,
         latest_message,
-        subject,
         metadata={
             "order_number": metadata.get("order_number"),
             "product": metadata.get("product"),
@@ -120,10 +120,17 @@ def draft():
 
     # Shipping override
     combined = f"{subject} {latest_message}".lower()
-    if any(k in combined for k in ["shipping", "order", "tracking", "where is my"]):
+    # Shipping override — ONLY if classifier was uncertain
+    combined = f"{subject} {latest_message}".lower()
+
+    if (
+        classification["primary_intent"] == "unknown_vague"
+        and any(k in combined for k in ["shipping", "tracking", "where is my"])
+    ):
         classification["primary_intent"] = "shipping_status"
         classification["confidence"]["intent_confidence"] = 0.90
         classification["confidence"]["ambiguity_detected"] = False
+
 
     normalized = normalize_intent(
         primary=classification["primary_intent"],
