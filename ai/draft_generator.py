@@ -51,7 +51,6 @@ def enrich_with_knowledge(
     Phase 1.4 placeholder.
     Knowledge injection is disabled for now.
     """
-    return draft_text
 
 # ============================================================
 # ## PHASE 3.1 — Reasoning Style Control (HELPER)
@@ -66,27 +65,6 @@ def apply_reasoning_style(
     Keeps drafts thoughtful but not verbose or speculative.
     """
 
-    # SAFETY GUARD
-    if not draft_text or not isinstance(draft_text, str):
-        return draft_text if isinstance(draft_text, str) else ""
-
-    text = draft_text
-
-    # Diagnostic replies should prefer questions over explanations
-    if mode == "diagnostic":
-        if "why this happens" in text.lower():
-            text = text.replace("why this happens", "what we need to check next")
-
-    # Explanatory replies should not include troubleshooting steps
-    if mode == "explanatory":
-        forbidden = ["step", "check", "try", "restart", "reboot"]
-        lowered = text.lower()
-        for word in forbidden:
-            if f"{word} " in lowered:
-                # simple strip (safe, not perfect)
-                text = text.replace(word, "")
-
-    return text
 
 # ============================================================
 # ## PHASE 4.1 — Generic Opener Detector (HELPER)
@@ -122,6 +100,7 @@ def polish_draft_text(
     NO logic changes. NO intent changes.
     """
 
+    # HARD GUARANTEE: always operate on a string
     if not isinstance(draft_text, str):
         return ""
 
@@ -131,7 +110,6 @@ def polish_draft_text(
     # Shipping auto-send: remove interactive language
     # -------------------------------------------------
     if intent == "shipping_status" and mode == "explanatory":
-        # Remove soft openers
         replacements = {
             "I can help": "Here’s an update",
             "Let me help": "Here’s an update",
@@ -148,6 +126,7 @@ def polish_draft_text(
 
     return text
 
+
 # ============================================================
 # ## PHASE 4.2 — Draft Acceptance Gate (HARD)
 # ============================================================
@@ -163,16 +142,6 @@ def draft_fails_acceptance_gate(
 
     failures: list[str] = []
 
-    # ----------------------------------
-    # 0️⃣ Hard guards
-    # ----------------------------------
-    if not draft_text or not isinstance(draft_text, str):
-        failures.append("empty_draft")
-        return failures
-
-    if not draft_text.strip():
-        failures.append("empty_draft")
-        return failures
 
     # ----------------------------------
     # 1️⃣ Generic opener rules
@@ -273,6 +242,12 @@ def generate_draft(
         latest_message = message
 
     text = (latest_message or "").strip()
+    # -------------------------------------------------
+    # HARD INTENT LOCK — commerce must never downgrade
+    # -------------------------------------------------
+    if intent == "purchase_inquiry":
+        mode = "explanatory"
+
 
 
     prior_agent_messages = prior_agent_messages or []
@@ -290,6 +265,19 @@ def generate_draft(
 
     print(">>> FINAL MODE:", mode)
     print(">>> FINAL INTENT:", intent)
+    # Force non-diagnostic mode for commerce intents
+    if intent in ("purchase_inquiry",):
+        mode = "explanatory"
+        # ----------------------------
+    # Phase 1.2 — mode derivation
+    # ----------------------------
+    if intent == "shipping_status":
+        mode = "explanatory"
+    elif intent in ("setup_help", "sync_delay", "not_hashing"):
+        mode = "diagnostic"
+    else:
+        mode = mode or "diagnostic"
+
 
      # ============================================================
     # ## PHASE 1.3 — Draft Differentiation by Intent (LOCAL HELPER, LOCKED)
@@ -316,6 +304,19 @@ def generate_draft(
         # (LLM or other logic happens AFTER this point)
 
 
+        if intent == "purchase_inquiry":
+            # LLM is king: do NOT ask diagnostic questions
+            # (Either return a tight deterministic purchase reply,
+            #  or let the LLM generate using a purchase prompt.)
+            return (
+                "Absolutely — I can help with that.\n\n"
+                "To point you to the right option, which are you looking for?\n"
+                "• Another Solo Node\n"
+                "• Another Apollo miner\n\n"
+                "And do you want:\n"
+                "• the quickest ship option, or\n"
+                "• the best value/performance option?"
+            )
 
         
         if intent == "setup_help":
@@ -327,15 +328,7 @@ def generate_draft(
                 "3) Try accessing the dashboard using the device’s IP address\n\n"
                 "Let me know which step you get stuck on and we’ll go from there."
             )
-        if intent == "diagnostic_generic":
-            return (
-                "Thanks for explaining what you’re seeing — that helps.\n\n"
-                "Before we try any fixes, I want to make sure we’re looking in the right place.\n\n"
-                "Could you tell me:\n"
-                "• What the miner status shows right now (running, stopped, idle)\n"
-                "• Whether any error messages appear on the dashboard or in the logs\n"
-            )
-
+    
 
 
         if intent == "shipping_status":
@@ -344,14 +337,31 @@ def generate_draft(
                 "It’s normal for shipping updates to take a little time to appear after checkout. "
                 "Here’s what usually happens next."
             )
-
-
-        if intent == "unknown_vague":
+        # ✅ ADD IT RIGHT HERE
+        if intent == "purchase_inquiry":
             return (
-                "Thanks for reaching out.\n\n"
-                "Could you tell me a bit more about what you’re seeing or trying to do?\n"
-                "A few extra details will help me guide you better."
+                "Absolutely — I can help with that.\n\n"
+                "Here’s what I can assist with:\n"
+                "• Current node availability and pricing\n"
+                "• Differences between node models\n"
+                "• Expected shipping timelines\n\n"
+                "What would you like to start with?"
             )
+
+
+        if intent == "unknown_vague" and normalized_intent != "purchase_inquiry":
+            return {
+                "type": "full",
+                "response_text": fallback_text,
+                "quality_metrics": {
+                    "mode": mode,
+                    "delta_enforced": True,
+                    "fallback_used": True,
+                    "reason": "unknown_intent_clarification",
+                },
+                "canned_response_suggestion": None,
+            }
+
 
         # ----------------------------
         # Phase 2 — intent-safe fallback
@@ -385,13 +395,37 @@ def generate_draft(
     # ----------------------------
     text_lower = text.lower()
     intent_locked = False
+    # -------------------------------------------------
+    # INTENT NUDGES — upgrade obvious keywords from unknown_vague
+    # -------------------------------------------------
+    if intent in (None, "unknown_vague"):
+        if "refund" in text_lower or "return" in text_lower or "chargeback" in text_lower:
+            intent = "refund_policy"
+        elif "purchase" in text_lower or "buy" in text_lower or "order another" in text_lower:
+            intent = "purchase_inquiry"
+
 
 
     if intent is None:
-        if any(k in text_lower for k in ["order", "shipping", "ship", "tracking"]):
+        # ---- PURCHASE MUST BE DETECTED FIRST ----
+        if any(k in text_lower for k in [
+            "purchase",
+            "buy",
+            "order another",
+            "another node",
+            "new node",
+            "solo node",
+            "apollo",
+            "place an order",
+        ]):
+            intent = "purchase_inquiry"
+
+        elif any(k in text_lower for k in ["order", "shipping", "ship", "tracking"]):
             intent = "shipping_status"
+
         elif any(k in text_lower for k in ["refund", "return", "chargeback"]):
             intent = "refund_policy"
+
 
     if mode is None:
         if intent == "shipping_status":
@@ -464,10 +498,25 @@ def generate_draft(
         ),
         user_message=latest_message,
     )
-    if not isinstance(llm_text, str) or not llm_text.strip():
+    # --- LLM OUTPUT NORMALIZATION (HARD GUARANTEE STRING) ---
+    if isinstance(llm_text, dict):
+        llm_text = llm_text.get("text") or llm_text.get("response") or ""
+    elif not isinstance(llm_text, str):
         llm_text = ""
 
+    llm_text = llm_text.strip()
+    # -------------------------------------------------
+    # LLM IS SOURCE OF TRUTH FOR VALID QUESTIONS
+    # -------------------------------------------------
+    if llm_text:
+        draft_text = llm_text
 
+    # -------------------------------------------------
+    # RULE: purchase inquiry must NEVER be diagnostic
+    # (mode correction only, no overwriting LLM)
+    # -------------------------------------------------
+    if intent == "purchase_inquiry":
+        mode = "explanatory"
 
     response_text = ""
     needs_clarification = False
@@ -478,8 +527,7 @@ def generate_draft(
     draft_intent = intent
 
     # LEGACY: rules may suggest intent, but may NOT override LLM text
-    # draft_text = _draft_for_intent(draft_intent)
-    draft_text = response_text
+   
 
 
     # ✅ CRASH GUARD — ensure intent_result always exists
@@ -548,11 +596,34 @@ def generate_draft(
             else:
                 draft_text = draft_text + "\n\n" + knowledge_block
 
-    draft_text = apply_draft_constraints(
-        draft_text=draft_text,
-        intent=intent,
-        tone_modifier=tone_modifier,
-    )
+            draft_text = apply_draft_constraints(
+                draft_text=draft_text,
+                intent=intent,
+                tone_modifier=tone_modifier,
+            )
+
+    # -------------------------------------------------
+    # HARD NORMALIZATION — draft_text MUST be a string before gates
+    # (prevents: TypeError 'NoneType' is not iterable)
+    # -------------------------------------------------
+    if isinstance(draft_text, dict):
+        draft_text = (
+            draft_text.get("response_text")
+            or draft_text.get("text")
+            or draft_text.get("response")
+            or ""
+        )
+    if draft_text is None:
+        draft_text = ""
+    elif not isinstance(draft_text, str):
+        draft_text = str(draft_text)
+
+    draft_text = draft_text.strip()
+
+    # If still empty, prefer LLM output if we have it
+    if not draft_text and isinstance(llm_text, str) and llm_text.strip():
+        draft_text = llm_text.strip()
+
     # -------------------------------------------------
     # PHASE 4 — Acceptance Gate (HARD)
     # -------------------------------------------------
@@ -561,141 +632,21 @@ def generate_draft(
         intent=intent,
         mode=mode,
     )
-    # -------------------------------------------------
-    # HARD RULE: diagnostics must ask a question
-    # Prevents step-dumping and LLM "helpfulness"
-    # -------------------------------------------------
-    # HARD RULE: diagnostics must gather missing info
-    if mode == "diagnostic" and ("?" not in (draft_text or "")):
-        llm_question = generate_llm_response(
-            system_prompt=(
-                "You are a calm, professional technical support agent.\n"
-                "The customer is experiencing a problem, but there is missing information.\n"
-                "Ask ONE or TWO focused clarifying questions that would help diagnose the issue.\n"
-                "Do NOT suggest fixes yet.\n"
-                "Do NOT mention policies, warranties, or reflashing.\n"
-                "Be concise, reassuring, and specific."
-            ),
-            user_message=latest_message,
-        )
 
-        # SAFETY FALLBACK — LLM failed or returned junk
-        if not isinstance(llm_question, str) or "?" not in llm_question:
-            llm_question = (
-                "Thanks for explaining what's happening.\n\n"
-                "Before we try any fixes, could you tell me:\n"
-                "• What the miner status currently shows\n"
-                "• Whether any error messages appear on the dashboard\n"
-            )
-
-        return {
-            "type": "requires_review",
-            "response_text": llm_question.strip(),
-            "quality_metrics": {
-                "mode": mode,
-                "delta_enforced": True,
-                "fallback_used": False,
-            },
-            "canned_response_suggestion": None,
-        }
 
     # -------------------------------------------------
-    # HARD GUARANTEE: draft_text must be a non-empty string
-    # This prevents 500s on hashing/setup/refund paths.
+    # FINAL HARD GUARANTEE — ONE PLACE ONLY
     # -------------------------------------------------
     if not isinstance(draft_text, str) or not draft_text.strip():
-        draft_text = generate_llm_response(
-            system_prompt=(
-                "You are a calm, practical customer support agent. "
-                "Answer the customer's message as best you can. "
-                "If you need more info, ask ONE clear follow-up question."
-            ),
-            user_message=latest_message,
-        ) or ""
+        draft_text = "I can help — could you clarify what you’re looking for?"
 
-    # -------------------------------------------------
-    # HARD FALLBACK: unknown intent → clarifying question
-    # -------------------------------------------------
-    if intent == "unknown_vague":
-        clarifying_system_prompt = (
-            "You are a calm, professional customer support agent. "
-            "The customer's request is unclear. "
-            "Ask ONE short, polite clarifying question. "
-            "Do not assume facts. Do not provide solutions yet."
-        )
-
-        fallback_text = generate_llm_response(
-            prompt=f"You are a helpful support agent.\n\n{latest_message}"
-        )
-
-        return {
-            "type": "full",
-            "response_text": fallback_text,
-            "quality_metrics": {
-                "mode": mode,
-                "delta_enforced": True,
-                "fallback_used": True,
-                "reason": "unknown_intent_clarification",
-            },
-            "canned_response_suggestion": None,
-        }
-
-    if failures:
-        fallback_text = generate_llm_response(
-            system_prompt=(
-                "You are a helpful customer support assistant. "
-                "Respond clearly, accurately, and concisely."
-            ),
-            user_message=latest_message,
-        )
-
-        return {
-            "type": "requires_review",
-            "response_text": fallback_text,
-            "quality_metrics": {
-                "mode": mode,
-                "delta_enforced": True,
-                "acceptance_failures": failures,
-                "fallback_used": True,
-            },
-            "canned_response_suggestion": None,
-        }
-
-    # ---------------------------------------------
-    # Unknown / fallback intent — safe LLM response
-    # ---------------------------------------------
-    fallback_text = generate_llm_response(
-        system_prompt=(
-            "You are a helpful customer support assistant. "
-            "Respond clearly, accurately, and concisely."
-        ),
-        user_message=latest_message,
-    )
-    # ---------------------------------------------
-    # FINAL OUTPUT — SINGLE EXIT (REQUIRED)
-    # ---------------------------------------------
-
-    if draft_text and isinstance(draft_text, str) and draft_text.strip():
-        return {
-            "type": "full",
-            "response_text": draft_text,
-            "quality_metrics": {
-                "mode": mode,
-                "delta_enforced": True,
-                "fallback_used": False,
-            },
-            "canned_response_suggestion": None,
-        }
-
-    # Otherwise, fallback
     return {
         "type": "full",
-        "response_text": fallback_text,
+        "response_text": draft_text,
         "quality_metrics": {
             "mode": mode,
             "delta_enforced": True,
-            "fallback_used": True,
-            "reason": "unknown_intent_llm_fallback",
+            "fallback_used": bool(failures),
         },
         "canned_response_suggestion": None,
     }
