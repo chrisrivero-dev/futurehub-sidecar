@@ -9,10 +9,13 @@ import time
 import logging
 import os
 import requests
-from flask_cors import CORS
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
-
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    return response
 
 
 
@@ -54,6 +57,12 @@ FRESHDESK_API_KEY = os.environ.get("FRESHDESK_API_KEY")
 def ingest_ticket():
     if request.method == "OPTIONS":
         return jsonify({"status": "ok"}), 200
+
+    data = request.get_json()
+    ticket_id = data.get("ticket_id")
+    print("Received ticket:", ticket_id)
+
+    return jsonify({"received": ticket_id}), 200
 
 
 
