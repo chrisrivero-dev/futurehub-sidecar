@@ -63,6 +63,7 @@ def add_cors_headers(response):
 # Ticket Ingest Endpoint
 # =========================
 
+
 @app.route("/ingest-ticket", methods=["POST", "OPTIONS"])
 def ingest_ticket():
 
@@ -70,8 +71,16 @@ def ingest_ticket():
     if request.method == "OPTIONS":
         return jsonify({"status": "ok"}), 200
 
+    # 🔥 Read environment variables at request time
+    FRESHDESK_DOMAIN = os.environ.get("FRESHDESK_DOMAIN")
+    FRESHDESK_API_KEY = os.environ.get("FRESHDESK_API_KEY")
+
     if not FRESHDESK_DOMAIN or not FRESHDESK_API_KEY:
-        return jsonify({"error": "Freshdesk environment variables not configured"}), 500
+        return jsonify({
+            "error": "Freshdesk environment variables not configured",
+            "domain_present": bool(FRESHDESK_DOMAIN),
+            "api_key_present": bool(FRESHDESK_API_KEY)
+        }), 500
 
     data = request.get_json()
     if not data:
@@ -83,9 +92,6 @@ def ingest_ticket():
 
     auth = (FRESHDESK_API_KEY, "X")
 
-    # ------------------------
-    # Fetch Ticket
-    # ------------------------
     ticket_res = requests.get(
         f"https://{FRESHDESK_DOMAIN}/api/v2/tickets/{ticket_id}",
         auth=auth
@@ -98,24 +104,7 @@ def ingest_ticket():
             "details": ticket_res.text
         }), 500
 
-    ticket = ticket_res.json()
-
-    # ------------------------
-    # Fetch Conversations
-    # ------------------------
-    convo_res = requests.get(
-        f"https://{FRESHDESK_DOMAIN}/api/v2/conversations?ticket_id={ticket_id}",
-        auth=auth
-    )
-
-    conversations = convo_res.json() if convo_res.status_code == 200 else []
-
-    return jsonify({
-        "ticket_id": ticket_id,
-        "subject": ticket.get("subject"),
-        "description": ticket.get("description"),
-        "conversations": conversations
-    }), 200
+    return jsonify(ticket_res.json()), 200
 
 
 # -----------------------------------
