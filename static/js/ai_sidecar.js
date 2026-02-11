@@ -1,3 +1,5 @@
+console.log('🔥 THIS IS THE LIVE FILE v2');
+
 window.addEventListener('message', (event) => {
   if (!event.data || event.data.type !== 'TICKET_DATA') return;
 
