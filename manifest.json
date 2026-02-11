@@ -1,0 +1,21 @@
+{
+  "platform-version": "3.0",
+  "product": {
+    "freshdesk": {
+      "location": {
+        "ticket_sidebar": {
+          "url": "templates/ai_sidecar.html"
+        }
+      }
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "whitelisted-domains": [],
+  "permissions": {
+    "ticket": {
+      "read": true
+    }
+  }
+}

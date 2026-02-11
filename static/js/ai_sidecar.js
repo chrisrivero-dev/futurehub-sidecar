@@ -1,3 +1,30 @@
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "sidecar-port") return;
+
+  console.log("✅ Sidecar port connected");
+
+  port.onMessage.addListener((msg) => {
+    if (!msg || msg.type !== "TICKET_DATA") return;
+
+    const ticket = msg.ticket;
+
+    console.log("🔥 Ticket received in sidecar:", ticket.subject);
+
+    const subjectEl = document.getElementById("subject");
+    const latestEl = document.getElementById("latest-message");
+
+    if (subjectEl) subjectEl.value = ticket.subject || "";
+
+    if (latestEl) {
+      latestEl.value =
+        ticket.description_text ||
+        ticket.description ||
+        "";
+    }
+  });
+});
+
+
 // static/js/ai_sidecar.js
 // Executive Summary is derived from existing per-ticket signals.
 // No analytics, no historical data, no AI calls.
@@ -18,40 +45,8 @@ const ACTION_SNIPPETS = {
 
   'Provide accurate tracking information':
     "I'll confirm the latest tracking information and share an update with you.\n\n",
-};
-// --- Extract Ticket ID from Freshdesk URL ---
-function getTicketIdFromUrl() {
-  const parts = window.location.pathname.split('/');
-  return parts[parts.length - 1];
-}
+// static/js/ai_sidecar.js
 
-const ticketId = getTicketIdFromUrl();
-console.log('Detected ticketId:', ticketId);
-// --- Send ticket to backend automatically ---
-if (ticketId) {
-  fetch('/ingest-ticket', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ticket_id: ticketId }),
-  })
-    .then((res) => res.json())
-    .then((data) => {
-      console.log('Ticket data received:', data);
-
-      // Fill sidebar fields automatically
-      const subjectInput = document.querySelector(
-        "input[placeholder='Ticket subject']"
-      );
-      const messageInput = document.querySelector(
-        "textarea[placeholder='Customer\\'s most recent message']"
-      );
-
-      if (subjectInput && data.subject) subjectInput.value = data.subject;
-      if (messageInput && data.description_text)
-        messageInput.value = data.description_text;
-    })
-    .catch((err) => console.error('Sidecar fetch error:', err));
-}
 
 // -------------------------------------
 // Intent -> Recommended canned response (v1)
