@@ -8,6 +8,8 @@ from datetime import datetime
 import time
 import logging
 import os
+import requests
+
 
 from intent_classifier import detect_intent
 from ai.draft_generator import generate_draft
@@ -39,7 +41,56 @@ from datetime import datetime
 APP_BUILD = os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GITHUB_SHA") or "unknown"
 APP_BUILD_TIME = os.getenv("APP_BUILD_TIME") or datetime.utcnow().isoformat() + "Z"
 
+FRESHDESK_DOMAIN = os.environ.get("FRESHDESK_DOMAIN")
+FRESHDESK_API_KEY = os.environ.get("FRESHDESK_API_KEY")
 
+
+@app.route("/ingest-ticket", methods=["POST"])
+def ingest_ticket():
+    if not FRESHDESK_DOMAIN or not FRESHDESK_API_KEY:
+        return jsonify({"error": "Freshdesk environment variables not configured"}), 500
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    ticket_id = data.get("ticket_id")
+    if not ticket_id:
+        return jsonify({"error": "Missing ticket_id"}), 400
+
+    auth = (FRESHDESK_API_KEY, "X")
+
+    # Fetch ticket
+    ticket_res = requests.get(
+        f"https://{FRESHDESK_DOMAIN}/api/v2/tickets/{ticket_id}",
+        auth=auth
+    )
+
+    if ticket_res.status_code != 200:
+        return jsonify({
+            "error": "Ticket fetch failed",
+            "status": ticket_res.status_code,
+            "details": ticket_res.text
+        }), 500
+
+    ticket = ticket_res.json()
+
+    # Fetch conversations
+    convo_res = requests.get(
+        f"https://{FRESHDESK_DOMAIN}/api/v2/conversations?ticket_id={ticket_id}",
+        auth=auth
+    )
+
+    conversations = []
+    if convo_res.status_code == 200:
+        conversations = convo_res.json()
+
+    return jsonify({
+        "ticket_id": ticket_id,
+        "subject": ticket.get("subject"),
+        "description": ticket.get("description"),
+        "conversations": conversations
+    })
 
 
 
