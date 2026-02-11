@@ -5,11 +5,52 @@ POST /api/v1/draft endpoint with intent classification and draft generation
 
 from flask import Flask, request, jsonify
 from datetime import datetime
-import time
 import logging
 import os
 import requests
+from dotenv import load_dotenv
+
+from intent_classifier import detect_intent
+from ai.draft_generator import generate_draft
+from ai.intent_normalization import normalize_intent
+from ai.missing_info_detector import detect_missing_information
+from ai.auto_send_evaluator import evaluate_auto_send
+
+from routes.sidecar_ui import sidecar_ui_bp
+from routes.insights import insights_bp
+from utils.build import build_id
+
+
+# =========================
+# App Initialization
+# =========================
+
+load_dotenv()
+
 app = Flask(__name__)
+
+# Register blueprints ONCE
+app.register_blueprint(sidecar_ui_bp)
+app.register_blueprint(insights_bp)
+
+logger = logging.getLogger(__name__)
+
+
+# =========================
+# Build Metadata
+# =========================
+
+APP_BUILD = os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GITHUB_SHA") or "unknown"
+APP_BUILD_TIME = os.getenv("APP_BUILD_TIME") or datetime.utcnow().isoformat() + "Z"
+
+FRESHDESK_DOMAIN = os.getenv("FRESHDESK_DOMAIN")
+FRESHDESK_API_KEY = os.getenv("FRESHDESK_API_KEY")
+
+
+# =========================
+# Global CORS (Single Source)
+# =========================
+
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
@@ -18,55 +59,17 @@ def add_cors_headers(response):
     return response
 
 
-
-from intent_classifier import detect_intent
-from ai.draft_generator import generate_draft
-from routes.sidecar_ui import sidecar_ui_bp
-from ai.intent_normalization import normalize_intent
-from ai.missing_info_detector import detect_missing_information
-from ai.auto_send_evaluator import evaluate_auto_send
-from dotenv import load_dotenv
-from utils.build import build_id
-# Near other blueprint registrations:
-
-from routes.insights import insights_bp
-
-# ✅ Ensure app exists BEFORE registering blueprints
-app = Flask(__name__)
-
-# Existing blueprint registrations (keep yours here)
-app.register_blueprint(sidecar_ui_bp)
-app.register_blueprint(insights_bp)
-
-load_dotenv()
-
-
-logger = logging.getLogger(__name__)
-
-import os
-from datetime import datetime
-
-APP_BUILD = os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GITHUB_SHA") or "unknown"
-APP_BUILD_TIME = os.getenv("APP_BUILD_TIME") or datetime.utcnow().isoformat() + "Z"
-
-FRESHDESK_DOMAIN = os.environ.get("FRESHDESK_DOMAIN")
-FRESHDESK_API_KEY = os.environ.get("FRESHDESK_API_KEY")
-
+# =========================
+# Ticket Ingest Endpoint
+# =========================
 
 @app.route("/ingest-ticket", methods=["POST", "OPTIONS"])
 def ingest_ticket():
+
+    # Handle preflight
     if request.method == "OPTIONS":
         return jsonify({"status": "ok"}), 200
 
-    data = request.get_json()
-    ticket_id = data.get("ticket_id")
-    print("Received ticket:", ticket_id)
-
-    return jsonify({"received": ticket_id}), 200
-
-
-
-def ingest_ticket():
     if not FRESHDESK_DOMAIN or not FRESHDESK_API_KEY:
         return jsonify({"error": "Freshdesk environment variables not configured"}), 500
 
@@ -80,7 +83,9 @@ def ingest_ticket():
 
     auth = (FRESHDESK_API_KEY, "X")
 
-    # Fetch ticket
+    # ------------------------
+    # Fetch Ticket
+    # ------------------------
     ticket_res = requests.get(
         f"https://{FRESHDESK_DOMAIN}/api/v2/tickets/{ticket_id}",
         auth=auth
@@ -95,23 +100,22 @@ def ingest_ticket():
 
     ticket = ticket_res.json()
 
-    # Fetch conversations
+    # ------------------------
+    # Fetch Conversations
+    # ------------------------
     convo_res = requests.get(
         f"https://{FRESHDESK_DOMAIN}/api/v2/conversations?ticket_id={ticket_id}",
         auth=auth
     )
 
-    conversations = []
-    if convo_res.status_code == 200:
-        conversations = convo_res.json()
+    conversations = convo_res.json() if convo_res.status_code == 200 else []
 
     return jsonify({
         "ticket_id": ticket_id,
         "subject": ticket.get("subject"),
         "description": ticket.get("description"),
         "conversations": conversations
-    })
-
+    }), 200
 
 
 # -----------------------------------
