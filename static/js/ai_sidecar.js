@@ -1,24 +1,16 @@
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'sidecar-port') return;
+window.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'TICKET_DATA') return;
 
-  console.log('✅ Sidecar port connected');
+  const ticket = event.data.ticket;
+  console.log('✅ UI received ticket:', ticket);
 
-  port.onMessage.addListener((msg) => {
-    if (!msg || msg.type !== 'TICKET_DATA') return;
+  const subject = document.getElementById('subject');
+  const latest = document.getElementById('latest-message');
 
-    const ticket = msg.ticket;
-
-    console.log('🔥 Ticket received in sidecar:', ticket.subject);
-
-    const subjectEl = document.getElementById('subject');
-    const latestEl = document.getElementById('latest-message');
-
-    if (subjectEl) subjectEl.value = ticket.subject || '';
-
-    if (latestEl) {
-      latestEl.value = ticket.description_text || ticket.description || '';
-    }
-  });
+  if (subject) subject.value = ticket.subject || '';
+  if (latest) {
+    latest.value = ticket.description_text || ticket.description || '';
+  }
 });
 
 // static/js/ai_sidecar.js
