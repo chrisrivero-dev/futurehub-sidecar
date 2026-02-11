@@ -62,6 +62,12 @@ def add_cors_headers(response):
 # =========================
 # Ticket Ingest Endpoint
 # =========================
+@app.route("/debug-env")
+def debug_env():
+    return {
+        "domain": os.environ.get("FRESHDESK_DOMAIN"),
+        "api_key_exists": bool(os.environ.get("FRESHDESK_API_KEY"))
+    }
 
 
 @app.route("/ingest-ticket", methods=["POST", "OPTIONS"])
@@ -324,6 +330,12 @@ def draft():
 
     return jsonify(response), 200
 
+@app.route("/debug-env")
+def debug_env():
+    return {
+        "domain": os.environ.get("FRESHDESK_DOMAIN"),
+        "api_key_exists": bool(os.environ.get("FRESHDESK_API_KEY"))
+    }
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
