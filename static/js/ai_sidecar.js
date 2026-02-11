@@ -1,29 +1,25 @@
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== "sidecar-port") return;
+  if (port.name !== 'sidecar-port') return;
 
-  console.log("✅ Sidecar port connected");
+  console.log('✅ Sidecar port connected');
 
   port.onMessage.addListener((msg) => {
-    if (!msg || msg.type !== "TICKET_DATA") return;
+    if (!msg || msg.type !== 'TICKET_DATA') return;
 
     const ticket = msg.ticket;
 
-    console.log("🔥 Ticket received in sidecar:", ticket.subject);
+    console.log('🔥 Ticket received in sidecar:', ticket.subject);
 
-    const subjectEl = document.getElementById("subject");
-    const latestEl = document.getElementById("latest-message");
+    const subjectEl = document.getElementById('subject');
+    const latestEl = document.getElementById('latest-message');
 
-    if (subjectEl) subjectEl.value = ticket.subject || "";
+    if (subjectEl) subjectEl.value = ticket.subject || '';
 
     if (latestEl) {
-      latestEl.value =
-        ticket.description_text ||
-        ticket.description ||
-        "";
+      latestEl.value = ticket.description_text || ticket.description || '';
     }
   });
 });
-
 
 // static/js/ai_sidecar.js
 // Executive Summary is derived from existing per-ticket signals.
@@ -45,8 +41,8 @@ const ACTION_SNIPPETS = {
 
   'Provide accurate tracking information':
     "I'll confirm the latest tracking information and share an update with you.\n\n",
-// static/js/ai_sidecar.js
-
+  // static/js/ai_sidecar.js
+}; // <--- YOU ARE LIKELY MISSING THIS LINE
 
 // -------------------------------------
 // Intent -> Recommended canned response (v1)
