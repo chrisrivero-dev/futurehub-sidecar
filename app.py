@@ -11,7 +11,8 @@ import os
 import requests
 from flask_cors import CORS
 app = Flask(__name__)
-CORS(app, resources={r"/ingest-ticket": {"origins": "*"}})
+CORS(app, supports_credentials=True)
+
 
 
 
@@ -50,6 +51,11 @@ FRESHDESK_API_KEY = os.environ.get("FRESHDESK_API_KEY")
 
 
 @app.route("/ingest-ticket", methods=["POST", "OPTIONS"])
+def ingest_ticket():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+
 
 def ingest_ticket():
     if not FRESHDESK_DOMAIN or not FRESHDESK_API_KEY:
