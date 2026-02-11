@@ -11,7 +11,8 @@ import os
 import requests
 from flask_cors import CORS
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/ingest-ticket": {"origins": "*"}})
+
 
 
 from intent_classifier import detect_intent
@@ -48,7 +49,8 @@ FRESHDESK_DOMAIN = os.environ.get("FRESHDESK_DOMAIN")
 FRESHDESK_API_KEY = os.environ.get("FRESHDESK_API_KEY")
 
 
-@app.route("/ingest-ticket", methods=["POST"])
+@app.route("/ingest-ticket", methods=["POST", "OPTIONS"])
+
 def ingest_ticket():
     if not FRESHDESK_DOMAIN or not FRESHDESK_API_KEY:
         return jsonify({"error": "Freshdesk environment variables not configured"}), 500
