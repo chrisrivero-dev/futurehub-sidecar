@@ -9,6 +9,9 @@ import time
 import logging
 import os
 import requests
+from flask_cors import CORS
+app = Flask(__name__)
+CORS(app)
 
 
 from intent_classifier import detect_intent
