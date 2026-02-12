@@ -118,18 +118,23 @@
    SIDECAR SCROLL CONTAINER
    =============================== */
 
-.sidecar-wrapper {
-  height: 100%;
-  max-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden; /* important */
-}
-
 .sidecar-content {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   padding-bottom: var(--spacing-xl);
   -webkit-overflow-scrolling: touch;
+}
+/* Full App Layout — Centered Internal Tool */
+.sidecar-wrapper.sidecar-fullpage {
+  position: relative; /* remove fixed behavior */
+  width: 100%;
+  min-height: 100vh;
+  display: block; /* no flex column locking */
+}
+
+.sidecar-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px;
 }
