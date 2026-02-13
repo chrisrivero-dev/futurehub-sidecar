@@ -16,7 +16,7 @@ from ai.draft_generator import generate_draft
 from ai.intent_normalization import normalize_intent
 from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
-from ai.strategy_engine import select_strategy, AUTO_TEMPLATE, PROACTIVE_DRAFT, ADVISORY_ONLY, SCAFFOLD
+from ai.strategy_engine import select_strategy
 from ai.template_bridge import scanAndVerifyVariables, bridgeMetadataToTemplate, prepare_template_draft
 
 from routes.sidecar_ui import sidecar_ui_bp
@@ -239,7 +239,8 @@ def draft():
             safety_mode = "review_required"
 
     # ==========================================================
-    # STEP 4: Strategy Selection (deterministic, no LLM)
+    # STEP 4: Strategy Selection (metadata/advisory tag only —
+    #         does NOT gate LLM execution)
     # ==========================================================
     ambiguity_detected = classification["confidence"].get("ambiguity_detected", False)
 
@@ -251,16 +252,9 @@ def draft():
         ambiguity_detected=ambiguity_detected,
     )
 
-    selected_strategy = strategy_result["strategy"]
-
     # ==========================================================
-    # STEP 5: Strategy-Conditional Draft Generation
-    #
-    # ONLY PROACTIVE_DRAFT calls generate_draft() (ChatGPT API).
-    # All other strategies use local logic — no LLM invocation.
+    # STEP 5: Retrieve matching templates (keyword/intent match)
     # ==========================================================
-
-    # Extracted data for template bridging + variable verification
     extracted_data = {
         "customer_name": data.get("customer_name"),
         "order_number": metadata.get("order_number"),
@@ -272,130 +266,78 @@ def draft():
     }
     extracted_data = {k: v for k, v in extracted_data.items() if v is not None}
 
-    if selected_strategy == AUTO_TEMPLATE:
-        # -------------------------------------------------------
-        # AUTO_TEMPLATE: Load canned template, merge variables.
-        # NO LLM call.
-        # -------------------------------------------------------
-        template_id = strategy_result.get("template_id")
-
-        canned_responses = _load_canned_responses()
-        template_result = prepare_template_draft(
-            template_id=template_id,
-            canned_responses=canned_responses,
-            extracted_data=extracted_data,
-        )
-
-        draft_text = template_result["draft_text"]
-        if not draft_text:
-            # Template not found — degrade to scaffold
-            draft_text = (
-                "I can help with that.\n\n"
-                "Let me look into this and get back to you shortly."
-            )
-
-        draft_result = {
-            "type": "full",
-            "response_text": draft_text,
-            "quality_metrics": {
-                "mode": "template",
-                "delta_enforced": False,
-                "fallback_used": not template_result["template_used"],
-                "llm_invoked": False,
-            },
-            "canned_response_suggestion": None,
-        }
-
-    elif selected_strategy == PROACTIVE_DRAFT:
-        # -------------------------------------------------------
-        # PROACTIVE_DRAFT: Call generate_draft() (ChatGPT API).
-        # This is the ONLY path that invokes the LLM.
-        # -------------------------------------------------------
-        agent_history = [
-            m["text"]
-            for m in conversation_history
-            if isinstance(m, dict) and m.get("role") == "agent"
-        ]
-        last_ai_draft = agent_history[-1] if agent_history else None
-
-        draft_output = generate_draft(
-            latest_message=latest_message,
-            intent=intent,
-            prior_draft=last_ai_draft,
-            prior_agent_messages=agent_history,
-        )
-
-        if isinstance(draft_output, dict):
-            draft_result = draft_output
-            draft_result.setdefault("quality_metrics", {})["llm_invoked"] = True
-        else:
-            draft_result = {
-                "type": "full",
-                "response_text": str(draft_output),
-                "quality_metrics": {
-                    "mode": "diagnostic",
-                    "delta_enforced": True,
-                    "fallback_used": False,
-                    "llm_invoked": True,
-                },
-                "canned_response_suggestion": None,
-            }
-
-        draft_text = draft_result.get("response_text", "")
-
-    elif selected_strategy == ADVISORY_ONLY:
-        # -------------------------------------------------------
-        # ADVISORY_ONLY: No sendable draft. Guidance only.
-        # NO LLM call.
-        # -------------------------------------------------------
-        draft_text = (
-            "[Advisory] This ticket requires manual agent review.\n\n"
-            f"Detected intent: {intent}\n"
-            f"Safety mode: {safety_mode}\n\n"
-            "Please review the customer message and compose a response manually."
-        )
-
-        draft_result = {
-            "type": "advisory",
-            "response_text": draft_text,
-            "quality_metrics": {
-                "mode": "advisory",
-                "delta_enforced": False,
-                "fallback_used": False,
-                "llm_invoked": False,
-            },
-            "canned_response_suggestion": None,
-        }
-
-    else:
-        # -------------------------------------------------------
-        # SCAFFOLD (default): Skeleton for agent to complete.
-        # NO LLM call.
-        # -------------------------------------------------------
-        draft_text = (
-            "Hi,\n\n"
-            "Thanks for reaching out. "
-            "I'd like to help, but I need a bit more information to proceed.\n\n"
-            "Could you provide:\n"
-            "1) [specific detail needed]\n"
-            "2) [additional context]\n\n"
-            "Once I have that, I can assist further."
-        )
-
-        draft_result = {
-            "type": "scaffold",
-            "response_text": draft_text,
-            "quality_metrics": {
-                "mode": "scaffold",
-                "delta_enforced": False,
-                "fallback_used": False,
-                "llm_invoked": False,
-            },
-            "canned_response_suggestion": None,
-        }
+    canned_responses = _load_canned_responses()
+    matched_templates = _match_templates(intent, latest_message, canned_responses)
 
     # ==========================================================
-    # STEP 6: Customer Name Injection (all strategies)
+    # STEP 6: Build augmented message for LLM (ALWAYS runs)
+    #
+    # The LLM receives:
+    #   - The customer message
+    #   - Conversation history context
+    #   - Extracted metadata
+    #   - Top matching templates as reference material
+    #
+    # The prompt instructs the LLM to:
+    #   - Identify ALL explicit and implicit questions
+    #   - Answer them in order
+    #   - Incorporate official template language where applicable
+    #   - NOT ignore secondary questions
+    #   - NOT return raw template text without contextualization
+    # ==========================================================
+    augmented_message = _build_augmented_message(
+        latest_message=latest_message,
+        subject=subject,
+        intent=intent,
+        safety_mode=safety_mode,
+        extracted_data=extracted_data,
+        matched_templates=matched_templates,
+        conversation_history=conversation_history,
+    )
+
+    agent_history = [
+        m["text"]
+        for m in conversation_history
+        if isinstance(m, dict) and m.get("role") == "agent"
+    ]
+
+    draft_output = generate_draft(
+        latest_message=augmented_message,
+        intent=intent,
+        prior_draft=agent_history[-1] if agent_history else None,
+        prior_agent_messages=agent_history,
+    )
+
+    if isinstance(draft_output, dict):
+        draft_result = draft_output
+    else:
+        draft_result = {
+            "type": "full",
+            "response_text": str(draft_output),
+            "quality_metrics": {
+                "mode": "diagnostic",
+                "delta_enforced": True,
+                "fallback_used": False,
+            },
+            "canned_response_suggestion": None,
+        }
+
+    # Always mark LLM as invoked
+    draft_result.setdefault("quality_metrics", {})["llm_invoked"] = True
+
+    # ==========================================================
+    # STEP 7: Detect which template was materially used
+    # ==========================================================
+    used_template_id = _detect_used_template(
+        draft_text=draft_result.get("response_text", ""),
+        matched_templates=matched_templates,
+    )
+
+    # Override strategy template_id with actual detected usage
+    strategy_result["template_id"] = used_template_id
+
+    # ==========================================================
+    # STEP 8: Customer Name Injection
     # ==========================================================
     draft_text = draft_result.get("response_text", "")
 
@@ -405,7 +347,7 @@ def draft():
         draft_result["response_text"] = draft_text
 
     # ==========================================================
-    # STEP 7: Variable Verification
+    # STEP 9: Variable Verification
     # ==========================================================
     variable_verification = scanAndVerifyVariables(draft_text, extracted_data)
 
@@ -424,7 +366,7 @@ def draft():
             variable_verification["has_required_missing"] = True
 
     # ==========================================================
-    # STEP 8: Auto-Send Evaluation
+    # STEP 10: Auto-Send Evaluation
     # ==========================================================
     auto_send_result = evaluate_auto_send(
         message=latest_message,
@@ -437,7 +379,7 @@ def draft():
     )
 
     # ==========================================================
-    # STEP 9: Build Response (v1.1 schema, unchanged)
+    # STEP 11: Build Response (v1.1 schema, unchanged)
     # ==========================================================
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
 
@@ -510,6 +452,186 @@ def _load_canned_responses():
         _CANNED_RESPONSES_CACHE = []
 
     return _CANNED_RESPONSES_CACHE
+
+
+# ==========================================================
+# Template Matching — intent + keyword (no vector DB)
+# ==========================================================
+from ai.strategy_engine import TEMPLATE_INTENT_MAP
+
+def _match_templates(intent, message, canned_responses):
+    """
+    Return top matching templates as list of {id, title, content}.
+    Uses intent map first, then keyword fallback.
+    Max 2 templates returned.
+    """
+    if not canned_responses:
+        return []
+
+    by_id = {str(t.get("id")): t for t in canned_responses}
+    matched = []
+    seen_ids = set()
+
+    # 1) Primary: intent-mapped template
+    primary_id = TEMPLATE_INTENT_MAP.get(intent)
+    if primary_id and primary_id in by_id:
+        t = by_id[primary_id]
+        matched.append({
+            "id": str(t["id"]),
+            "title": t.get("title", ""),
+            "content": t.get("content", ""),
+        })
+        seen_ids.add(primary_id)
+
+    # 2) Secondary: keyword scan across all templates
+    msg_lower = message.lower()
+    for t in canned_responses:
+        tid = str(t.get("id", ""))
+        if tid in seen_ids:
+            continue
+
+        title = (t.get("title") or "").lower()
+        content = (t.get("content") or "").lower()
+
+        # Check if significant words from the message appear in template
+        title_words = set(title.split())
+        # Match if >=2 title words appear in message, or title substring match
+        overlap = sum(1 for w in title_words if len(w) > 3 and w in msg_lower)
+        if overlap >= 2 or title in msg_lower:
+            matched.append({
+                "id": tid,
+                "title": t.get("title", ""),
+                "content": t.get("content", ""),
+            })
+            seen_ids.add(tid)
+
+        if len(matched) >= 2:
+            break
+
+    return matched
+
+
+# ==========================================================
+# Augmented Message Builder
+# ==========================================================
+
+def _build_augmented_message(
+    *,
+    latest_message,
+    subject,
+    intent,
+    safety_mode,
+    extracted_data,
+    matched_templates,
+    conversation_history,
+):
+    """
+    Build an enriched user message for generate_draft().
+    Includes customer message, metadata, and template context
+    with explicit instructions for the LLM.
+    """
+    parts = []
+
+    # --- Instruction block (prepended to user message) ---
+    parts.append(
+        "=== INSTRUCTIONS ===\n"
+        "You are drafting a customer support reply. Follow these rules:\n"
+        "1. Read the customer message below carefully.\n"
+        "2. Identify ALL explicit questions AND implicit questions (things the "
+        "customer clearly wants answered even if not phrased as a question).\n"
+        "3. Answer each question in order. Do NOT skip secondary questions.\n"
+        "4. If reference templates are provided below, incorporate their "
+        "official language and factual details into your answer — but do NOT "
+        "copy-paste a template verbatim. Contextualize it to this specific "
+        "customer's situation.\n"
+        "5. If no template is relevant, answer from first principles.\n"
+        "6. Keep the tone calm, professional, and helpful.\n"
+        "7. If you genuinely need more information to answer, ask ONE clear "
+        "follow-up — but still answer whatever you CAN answer first.\n"
+        "=== END INSTRUCTIONS ==="
+    )
+
+    # --- Ticket metadata ---
+    meta_lines = [f"Subject: {subject}", f"Detected intent: {intent}"]
+    if safety_mode:
+        meta_lines.append(f"Safety mode: {safety_mode}")
+    for k, v in extracted_data.items():
+        meta_lines.append(f"{k}: {v}")
+    parts.append("=== TICKET METADATA ===\n" + "\n".join(meta_lines) + "\n=== END METADATA ===")
+
+    # --- Reference templates ---
+    if matched_templates:
+        tmpl_block = []
+        for i, t in enumerate(matched_templates, 1):
+            tmpl_block.append(
+                f"--- Template {i}: {t['title']} ---\n{t['content']}\n--- End Template {i} ---"
+            )
+        parts.append(
+            "=== REFERENCE TEMPLATES ===\n"
+            "Use these as factual reference. Incorporate relevant details but "
+            "adapt the language to address this specific customer's questions.\n\n"
+            + "\n\n".join(tmpl_block)
+            + "\n=== END TEMPLATES ==="
+        )
+
+    # --- Conversation history (last 4 messages for context) ---
+    recent = []
+    for m in (conversation_history or [])[-4:]:
+        if isinstance(m, dict) and m.get("text"):
+            role = m.get("role", "unknown")
+            recent.append(f"[{role}] {m['text']}")
+    if recent:
+        parts.append(
+            "=== CONVERSATION HISTORY ===\n"
+            + "\n".join(recent)
+            + "\n=== END HISTORY ==="
+        )
+
+    # --- Customer message (the actual content to respond to) ---
+    parts.append(
+        "=== CUSTOMER MESSAGE ===\n"
+        + latest_message
+        + "\n=== END CUSTOMER MESSAGE ==="
+    )
+
+    return "\n\n".join(parts)
+
+
+# ==========================================================
+# Template Usage Detection (post-LLM)
+# ==========================================================
+
+def _detect_used_template(draft_text, matched_templates):
+    """
+    After the LLM generates a draft, detect which template (if any)
+    was materially used by checking phrase overlap.
+    Returns template_id or None.
+    """
+    if not draft_text or not matched_templates:
+        return None
+
+    draft_lower = draft_text.lower()
+    best_id = None
+    best_score = 0
+
+    for t in matched_templates:
+        content = (t.get("content") or "").lower()
+        if not content:
+            continue
+
+        # Split into meaningful phrases (sentences / fragments)
+        phrases = [p.strip() for p in content.replace("\n", ". ").split(". ") if len(p.strip()) > 15]
+        if not phrases:
+            continue
+
+        hits = sum(1 for p in phrases if p in draft_lower)
+        score = hits / len(phrases) if phrases else 0
+
+        if score > best_score and score >= 0.3:
+            best_score = score
+            best_id = t.get("id")
+
+    return best_id
 
 @app.route("/debug-env")
 def debug_env():
