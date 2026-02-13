@@ -16,8 +16,8 @@ from ai.draft_generator import generate_draft
 from ai.intent_normalization import normalize_intent
 from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
-from ai.strategy_engine import select_strategy
-from ai.template_bridge import scanAndVerifyVariables, bridgeMetadataToTemplate
+from ai.strategy_engine import select_strategy, AUTO_TEMPLATE, PROACTIVE_DRAFT, ADVISORY_ONLY, SCAFFOLD
+from ai.template_bridge import scanAndVerifyVariables, bridgeMetadataToTemplate, prepare_template_draft
 
 from routes.sidecar_ui import sidecar_ui_bp
 from routes.insights import insights_bp
@@ -158,7 +158,6 @@ def get_confidence_label(confidence: float) -> str:
 @app.route("/api/v1/draft", methods=["POST"])
 def draft():
     start_time = time.perf_counter()
-    autosend_confidence = 0.0
 
     try:
         data = request.get_json() or {}
@@ -167,23 +166,19 @@ def draft():
 
     subject = str(data.get("subject") or "").strip()
     latest_message = str(data.get("latest_message") or "").strip()
-
-    # 🔧 FIX: normalize payload for downstream code
-    message = str(data.get("message") or "").strip() or latest_message
-
     conversation_history = data.get("conversation_history") or []
 
     if not subject or not latest_message:
         return error_response("invalid_input", "subject and latest_message are required")
 
-    # --- everything else in your function continues here ---
-
-
     metadata = data.get("metadata") or {}
     attachments = metadata.get("attachments") or []
 
+    # ==========================================================
+    # STEP 1: Intent Classification (deterministic, no LLM)
+    # ==========================================================
     classification = detect_intent(
-         subject,
+        subject,
         latest_message,
         metadata={
             "order_number": metadata.get("order_number"),
@@ -192,11 +187,8 @@ def draft():
         },
     )
 
-    # Shipping override
-    combined = f"{subject} {latest_message}".lower()
     # Shipping override — ONLY if classifier was uncertain
     combined = f"{subject} {latest_message}".lower()
-
     if (
         classification["primary_intent"] == "unknown_vague"
         and any(k in combined for k in ["shipping", "tracking", "where is my"])
@@ -205,7 +197,9 @@ def draft():
         classification["confidence"]["intent_confidence"] = 0.90
         classification["confidence"]["ambiguity_detected"] = False
 
-
+    # ==========================================================
+    # STEP 2: Normalize Intent (deterministic, no LLM)
+    # ==========================================================
     normalized = normalize_intent(
         primary=classification["primary_intent"],
         secondary=classification.get("secondary_intent"),
@@ -215,48 +209,11 @@ def draft():
     issue_type = normalized["issue_type"]
     tags = normalized["tags"]
 
-    agent_history = [
-        m["text"]
-        for m in conversation_history
-        if isinstance(m, dict) and m.get("role") == "agent"
-    ]
-    last_ai_draft = agent_history[-1] if agent_history else None
-
-    # ----------------------------
-    # Draft generation
-    # ----------------------------
-    draft_output = generate_draft(
-        latest_message=latest_message,
-        intent=intent,
-        prior_draft=last_ai_draft,
-        prior_agent_messages=agent_history,
-    )
-
-    if isinstance(draft_output, dict):
-        draft_result = draft_output
-    else:
-        draft_result = {
-            "type": "full",
-            "response_text": str(draft_output),
-            "quality_metrics": {
-                "mode": "diagnostic",
-                "delta_enforced": True,
-                "fallback_used": False,
-            },
-            "canned_response_suggestion": None,
-        }
-
-    draft_text = draft_result.get("response_text", "")
-
-    customer_name = data.get("customer_name")
-    if customer_name and customer_name not in draft_text:
-        draft_text = f"{customer_name}, {draft_text}"
-        draft_result["response_text"] = draft_text
-
     confidence_overall = classification["confidence"]["intent_confidence"]
-    autosend_confidence = confidence_overall
 
-    # Missing info detection
+    # ==========================================================
+    # STEP 3: Missing Information Detection (deterministic, no LLM)
+    # ==========================================================
     last_customer_messages = [
         m["text"]
         for m in conversation_history
@@ -272,35 +229,18 @@ def draft():
         mode="diagnostic",
         metadata=metadata,
     )
-    # -------------------------------------------------
-    # Safety mode — guaranteed definition
-    # -------------------------------------------------
-    safety_mode = classification.get("safety_mode")
 
+    # Safety mode — guaranteed definition
+    safety_mode = classification.get("safety_mode")
     if not safety_mode:
         if intent in ("shipping_status", "shipping_eta", "firmware_update_info"):
             safety_mode = "safe"
         else:
             safety_mode = "review_required"
 
-
-    # ----------------------------
-    # Auto-send evaluation (FIXED SIGNATURE)
-    # ----------------------------
-    auto_send_result = evaluate_auto_send(
-         message=latest_message,
-        intent=intent,
-        intent_confidence=autosend_confidence,
-        safety_mode=safety_mode,
-        draft_text=draft_result,
-        acceptance_failures=draft_result.get("quality_metrics", {}).get("acceptance_failures", []),
-        missing_information=missing_information,
-    )
-
-
-    # ----------------------------
-    # Strategy selection
-    # ----------------------------
+    # ==========================================================
+    # STEP 4: Strategy Selection (deterministic, no LLM)
+    # ==========================================================
     ambiguity_detected = classification["confidence"].get("ambiguity_detected", False)
 
     strategy_result = select_strategy(
@@ -311,9 +251,16 @@ def draft():
         ambiguity_detected=ambiguity_detected,
     )
 
-    # ----------------------------
-    # Variable verification on draft text
-    # ----------------------------
+    selected_strategy = strategy_result["strategy"]
+
+    # ==========================================================
+    # STEP 5: Strategy-Conditional Draft Generation
+    #
+    # ONLY PROACTIVE_DRAFT calls generate_draft() (ChatGPT API).
+    # All other strategies use local logic — no LLM invocation.
+    # ==========================================================
+
+    # Extracted data for template bridging + variable verification
     extracted_data = {
         "customer_name": data.get("customer_name"),
         "order_number": metadata.get("order_number"),
@@ -323,14 +270,147 @@ def draft():
         "firmware_version": metadata.get("firmware_version"),
         "email": metadata.get("email"),
     }
-    # Remove None values so scanAndVerify sees only real data
     extracted_data = {k: v for k, v in extracted_data.items() if v is not None}
 
+    if selected_strategy == AUTO_TEMPLATE:
+        # -------------------------------------------------------
+        # AUTO_TEMPLATE: Load canned template, merge variables.
+        # NO LLM call.
+        # -------------------------------------------------------
+        template_id = strategy_result.get("template_id")
+
+        canned_responses = _load_canned_responses()
+        template_result = prepare_template_draft(
+            template_id=template_id,
+            canned_responses=canned_responses,
+            extracted_data=extracted_data,
+        )
+
+        draft_text = template_result["draft_text"]
+        if not draft_text:
+            # Template not found — degrade to scaffold
+            draft_text = (
+                "I can help with that.\n\n"
+                "Let me look into this and get back to you shortly."
+            )
+
+        draft_result = {
+            "type": "full",
+            "response_text": draft_text,
+            "quality_metrics": {
+                "mode": "template",
+                "delta_enforced": False,
+                "fallback_used": not template_result["template_used"],
+                "llm_invoked": False,
+            },
+            "canned_response_suggestion": None,
+        }
+
+    elif selected_strategy == PROACTIVE_DRAFT:
+        # -------------------------------------------------------
+        # PROACTIVE_DRAFT: Call generate_draft() (ChatGPT API).
+        # This is the ONLY path that invokes the LLM.
+        # -------------------------------------------------------
+        agent_history = [
+            m["text"]
+            for m in conversation_history
+            if isinstance(m, dict) and m.get("role") == "agent"
+        ]
+        last_ai_draft = agent_history[-1] if agent_history else None
+
+        draft_output = generate_draft(
+            latest_message=latest_message,
+            intent=intent,
+            prior_draft=last_ai_draft,
+            prior_agent_messages=agent_history,
+        )
+
+        if isinstance(draft_output, dict):
+            draft_result = draft_output
+            draft_result.setdefault("quality_metrics", {})["llm_invoked"] = True
+        else:
+            draft_result = {
+                "type": "full",
+                "response_text": str(draft_output),
+                "quality_metrics": {
+                    "mode": "diagnostic",
+                    "delta_enforced": True,
+                    "fallback_used": False,
+                    "llm_invoked": True,
+                },
+                "canned_response_suggestion": None,
+            }
+
+        draft_text = draft_result.get("response_text", "")
+
+    elif selected_strategy == ADVISORY_ONLY:
+        # -------------------------------------------------------
+        # ADVISORY_ONLY: No sendable draft. Guidance only.
+        # NO LLM call.
+        # -------------------------------------------------------
+        draft_text = (
+            "[Advisory] This ticket requires manual agent review.\n\n"
+            f"Detected intent: {intent}\n"
+            f"Safety mode: {safety_mode}\n\n"
+            "Please review the customer message and compose a response manually."
+        )
+
+        draft_result = {
+            "type": "advisory",
+            "response_text": draft_text,
+            "quality_metrics": {
+                "mode": "advisory",
+                "delta_enforced": False,
+                "fallback_used": False,
+                "llm_invoked": False,
+            },
+            "canned_response_suggestion": None,
+        }
+
+    else:
+        # -------------------------------------------------------
+        # SCAFFOLD (default): Skeleton for agent to complete.
+        # NO LLM call.
+        # -------------------------------------------------------
+        draft_text = (
+            "Hi,\n\n"
+            "Thanks for reaching out. "
+            "I'd like to help, but I need a bit more information to proceed.\n\n"
+            "Could you provide:\n"
+            "1) [specific detail needed]\n"
+            "2) [additional context]\n\n"
+            "Once I have that, I can assist further."
+        )
+
+        draft_result = {
+            "type": "scaffold",
+            "response_text": draft_text,
+            "quality_metrics": {
+                "mode": "scaffold",
+                "delta_enforced": False,
+                "fallback_used": False,
+                "llm_invoked": False,
+            },
+            "canned_response_suggestion": None,
+        }
+
+    # ==========================================================
+    # STEP 6: Customer Name Injection (all strategies)
+    # ==========================================================
+    draft_text = draft_result.get("response_text", "")
+
+    customer_name = data.get("customer_name")
+    if customer_name and customer_name not in draft_text:
+        draft_text = f"{customer_name}, {draft_text}"
+        draft_result["response_text"] = draft_text
+
+    # ==========================================================
+    # STEP 7: Variable Verification
+    # ==========================================================
     variable_verification = scanAndVerifyVariables(draft_text, extracted_data)
 
-    # Also incorporate missing_information items into verification
-    missing_info_items = missing_information.get("items", [])
-    for item in missing_info_items:
+    # Merge blocking missing-info items into verification
+    for item in missing_information.get("items", []):
         key = item.get("key", "")
         severity = item.get("severity", "non_blocking")
         already_in = any(m["key"] == key for m in variable_verification["missing"])
@@ -343,6 +423,22 @@ def draft():
             variable_verification["all_satisfied"] = False
             variable_verification["has_required_missing"] = True
 
+    # ==========================================================
+    # STEP 8: Auto-Send Evaluation
+    # ==========================================================
+    auto_send_result = evaluate_auto_send(
+        message=latest_message,
+        intent=intent,
+        intent_confidence=confidence_overall,
+        safety_mode=safety_mode,
+        draft_text=draft_result,
+        acceptance_failures=draft_result.get("quality_metrics", {}).get("acceptance_failures", []),
+        missing_information=missing_information,
+    )
+
+    # ==========================================================
+    # STEP 9: Build Response (v1.1 schema, unchanged)
+    # ==========================================================
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
 
     response = {
@@ -389,6 +485,31 @@ def draft():
     }
 
     return jsonify(response), 200
+
+
+# ==========================================================
+# Canned Responses Loader (file-cached)
+# ==========================================================
+import json as _json
+
+_CANNED_RESPONSES_CACHE = None
+
+def _load_canned_responses():
+    global _CANNED_RESPONSES_CACHE
+    if _CANNED_RESPONSES_CACHE is not None:
+        return _CANNED_RESPONSES_CACHE
+
+    canned_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "static", "data", "canned_responses.json",
+    )
+    try:
+        with open(canned_path, "r", encoding="utf-8") as f:
+            _CANNED_RESPONSES_CACHE = _json.load(f)
+    except (FileNotFoundError, _json.JSONDecodeError):
+        _CANNED_RESPONSES_CACHE = []
+
+    return _CANNED_RESPONSES_CACHE
 
 @app.route("/debug-env")
 def debug_env():
