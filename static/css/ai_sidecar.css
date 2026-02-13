@@ -3,6 +3,207 @@
    DO NOT STYLE COMPONENTS HERE
    ============================================ */
 
+/* ============================================
+   AUTO-RUN STATUS INDICATOR
+   ============================================ */
+
+.auto-run-status {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-top: 12px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.auto-run-status.status-idle {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+}
+
+.auto-run-status.status-loading {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #93c5fd;
+  animation: pulse-bg 1.5s ease-in-out infinite;
+}
+
+.auto-run-status.status-ready {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #6ee7b7;
+}
+
+.auto-run-status.status-warning {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fcd34d;
+}
+
+.auto-run-status.status-error {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+@keyframes pulse-bg {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ============================================
+   STRATEGY CARD
+   ============================================ */
+
+.strategy-card .strategy-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.strategy-card .strategy-header .section-title {
+  margin-bottom: 0;
+}
+
+.strategy-badge {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ============================================
+   MISSING VARIABLE CHIPS
+   ============================================ */
+
+.missing-variables-container {
+  margin: 12px 0;
+  padding: 12px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+}
+
+.missing-variables-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 8px;
+}
+
+.missing-variables-header .icon-warning {
+  width: 18px;
+  height: 18px;
+  color: #d97706;
+  flex-shrink: 0;
+}
+
+.missing-variable-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.variable-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.variable-chip-required {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+}
+
+.variable-chip-optional {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.variable-chip-label {
+  font-weight: 600;
+}
+
+.variable-chip-badge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #dc2626;
+  color: white;
+}
+
+.variable-chip-badge.optional {
+  background: #d97706;
+  color: white;
+}
+
+/* ============================================
+   INSERT INTO CRM BUTTON (PRIMARY ACTION)
+   ============================================ */
+
+.btn-insert-crm {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.9375rem;
+  padding: 14px 20px;
+}
+
+.btn-insert-crm .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.btn-insert-crm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-insert-crm:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* ============================================
+   REGENERATE BUTTON (SECONDARY ACTION)
+   ============================================ */
+
+.btn-regenerate {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-regenerate .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.btn-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 /* Collapsible content (JS-controlled) */
 .sidecar-collapsible.is-collapsed {
   display: none;

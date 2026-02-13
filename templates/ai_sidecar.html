@@ -1,6 +1,7 @@
 
 <!-- RENDERED FROM ai_sidecar.html : {{ request.path }} -->
 <!-- templates/ai_sidecar.html -->
+<!-- v2.0 — Auto-run on ticket detection, Insert into CRM primary action -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -20,7 +21,7 @@
 <div class="sidecar-wrapper sidecar-fullpage" id="ai-assistant-panel">
   <div class="sidecar-container">
 
-    <!-- Header (kept in same place, but aligned to content track) -->
+    <!-- Header -->
     <div class="sidecar-content sidecar-header-track">
       <header class="sidecar-header">
   <div class="header-content">
@@ -31,7 +32,7 @@
     />
     <div class="header-text">
       <h1>FH Assistant</h1>
-      <span class="header-version">v1.0</span>
+      <span class="header-version">v2.0</span>
       <span class="header-updated">• updated</span>
     </div>
   </div>
@@ -82,7 +83,7 @@
   <!-- EVERYTHING THAT COLLAPSES -->
   <div class="sidecar-collapsible">
 
-    <!-- Input Form -->
+    <!-- Input Form (hidden fields, no Generate Draft button) -->
     <section class="section-card">
       <h2 class="section-title">Ticket Information</h2>
 
@@ -123,28 +124,13 @@
           />
         </div>
 
-        <button
-          type="submit"
-          id="generate-btn"
-          class="btn-primary btn-block"
-        >
-          <svg
-            class="icon"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M13 10V3L4 14h7v7l9-11h-7z"
-            />
-          </svg>
-          Generate Draft
-        </button>
-
+        <!-- No primary Generate Draft button — auto-run handles this -->
       </form>
+
+      <!-- Auto-run status indicator -->
+      <div id="auto-run-status" class="auto-run-status status-idle">
+        Waiting for ticket data...
+      </div>
     </section>
 
     <!-- Empty State -->
@@ -162,21 +148,18 @@
           d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
         />
       </svg>
-      <p>Enter ticket details to generate draft</p>
+      <p>Draft will prepare automatically when ticket loads</p>
     </div>
-
-    <!-- Response container, metrics, draft, canned responses, etc
-         MUST all stay inside this div -->
 
   </div> <!-- /.sidecar-collapsible -->
 
 </div> <!-- /.sidecar-content -->
 
- 
+
           <!-- Response Container -->
           <div id="response-container" class="hidden">
 
-            <!-- ✅ AUTO-SEND CARD — Must be FIRST, IDs match JS exactly -->
+            <!-- AUTO-SEND CARD -->
             <section id="auto-send-card" class="section-card auto-send-card hidden">
               <div class="auto-send-card-content">
                 <div class="auto-send-icon">
@@ -203,7 +186,16 @@
               </div>
             </section>
 
-            <!-- 2. Confidence & Risk -->
+            <!-- Strategy Badge -->
+            <section class="section-card strategy-card">
+              <div class="strategy-header">
+                <h2 class="section-title">Strategy</h2>
+                <span id="strategy-badge" class="badge badge-neutral">—</span>
+              </div>
+              <p id="strategy-reason" class="help-text"></p>
+            </section>
+
+            <!-- Confidence & Risk -->
             <section class="section-card">
               <h2 class="section-title">Confidence & Risk</h2>
               <div class="metrics-stack">
@@ -242,7 +234,7 @@
               </div>
             </section>
 
-            <!-- 3. Intent Classification -->
+            <!-- Intent Classification -->
             <section class="section-card">
               <h2 class="section-title">Intent Classification</h2>
               <div class="intent-content">
@@ -256,7 +248,8 @@
                 </div>
               </div>
             </section>
-            <!-- 4. Draft Response -->
+
+            <!-- Draft Response -->
             <section class="section-card">
               <div class="section-header">
                 <h2 class="section-title">Draft Response</h2>
@@ -268,25 +261,56 @@
                 rows="8"
               ></textarea>
 
+              <!-- Missing Variables (shown only when variables are missing) -->
+              <div id="missing-variables-container" class="missing-variables-container hidden">
+                <div class="missing-variables-header">
+                  <svg class="icon icon-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <span>Missing Variables</span>
+                </div>
+                <div id="missing-variable-chips" class="missing-variable-chips"></div>
+              </div>
+
+              <!-- Primary Action: Insert into CRM -->
               <button
-                id="insert-draft-btn"
-                class="btn-secondary btn-block btn-sm"
+                id="insert-crm-btn"
+                class="btn-primary btn-block btn-insert-crm"
+                disabled
               >
-                Insert into Reply
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                Insert into CRM
+              </button>
+
+              <!-- Secondary Action: Regenerate -->
+              <button
+                id="regenerate-btn"
+                class="btn-secondary btn-block btn-sm btn-regenerate"
+                type="button"
+              >
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Regenerate
               </button>
             </section>
+
            <!-- Follow-up Questions -->
-<!-- Follow-up Questions -->
 <section class="section-card" id="followup-section">
   <h2 class="section-title centered">Follow-up Questions</h2>
   <div class="section-subtitle centered">Click to insert into draft</div>
 
   <div id="suggested-actions-list" class="actions-list">
-  
+
   </div>
 </section>
 
-            <!-- 6. Canned Responses -->
+            <!-- Canned Responses -->
             <section class="section-card">
               <h3 class="section-title">Canned Responses</h3>
 
@@ -297,7 +321,7 @@
                   type="button"
                   aria-expanded="false"
                 >
-                  <span>Select a canned response…</span>
+                  <span>Select a canned response...</span>
                   <svg
                     class="dropdown-caret"
                     viewBox="0 0 20 20"
@@ -316,12 +340,12 @@
               </div>
 
               <p class="help-text">
-                Select a response to insert it into the draft★ indicates
+                Select a response to insert it into the draft. ★ indicates
                 AI-recommended responses.
               </p>
             </section>
 
-            <!-- 7. Executive Summary -->
+            <!-- Executive Summary -->
 <section class="section-card" id="executive-summary">
   <h2 class="section-title">Executive Summary</h2>
 
@@ -360,7 +384,7 @@
     type="button"
     aria-expanded="false"
   >
-    📊 Weekly Executive Summary
+    Weekly Executive Summary
     <span class="chevron">▾</span>
   </button>
 
@@ -368,7 +392,7 @@
     class="weekly-summary-body hidden"
     id="weekly-summary-body"
   >
-    <p class="muted">Loading summary…</p>
+    <p class="muted">Loading summary...</p>
   </div>
 </div>
 
@@ -382,11 +406,11 @@
   <div id="decision-explanation-container"></div>
 </section>
 
-</section> <!-- ✅ CLOSE the main sidecar section here -->
+</section>
 
 
 
-            <!-- 8. Conversation Context -->
+            <!-- Conversation Context -->
             <section class="section-card">
               <h2 class="section-title">Conversation Context</h2>
               <div id="conversation-messages"></div>
@@ -396,7 +420,7 @@
       </div>
     </div>
 
-    <div id="toast" class="toast hidden"></div> 
+    <div id="toast" class="toast hidden"></div>
     <script defer src="{{ url_for('static', filename='js/ai_sidecar.js') }}?v={{ build_id }}"></script>
     </body>
     </html>

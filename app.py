@@ -16,6 +16,8 @@ from ai.draft_generator import generate_draft
 from ai.intent_normalization import normalize_intent
 from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
+from ai.strategy_engine import select_strategy
+from ai.template_bridge import scanAndVerifyVariables, bridgeMetadataToTemplate
 
 from routes.sidecar_ui import sidecar_ui_bp
 from routes.insights import insights_bp
@@ -296,11 +298,56 @@ def draft():
     )
 
 
+    # ----------------------------
+    # Strategy selection
+    # ----------------------------
+    ambiguity_detected = classification["confidence"].get("ambiguity_detected", False)
+
+    strategy_result = select_strategy(
+        intent=intent,
+        confidence=confidence_overall,
+        safety_mode=safety_mode,
+        missing_info=missing_information,
+        ambiguity_detected=ambiguity_detected,
+    )
+
+    # ----------------------------
+    # Variable verification on draft text
+    # ----------------------------
+    extracted_data = {
+        "customer_name": data.get("customer_name"),
+        "order_number": metadata.get("order_number"),
+        "product": metadata.get("product"),
+        "device_model": metadata.get("product"),
+        "tracking_number": metadata.get("tracking_number"),
+        "firmware_version": metadata.get("firmware_version"),
+        "email": metadata.get("email"),
+    }
+    # Remove None values so scanAndVerify sees only real data
+    extracted_data = {k: v for k, v in extracted_data.items() if v is not None}
+
+    variable_verification = scanAndVerifyVariables(draft_text, extracted_data)
+
+    # Also incorporate missing_information items into verification
+    missing_info_items = missing_information.get("items", [])
+    for item in missing_info_items:
+        key = item.get("key", "")
+        severity = item.get("severity", "non_blocking")
+        already_in = any(m["key"] == key for m in variable_verification["missing"])
+        if not already_in and severity == "blocking":
+            variable_verification["missing"].append({
+                "key": key,
+                "label": key.replace("_", " ").title(),
+                "required": True,
+            })
+            variable_verification["all_satisfied"] = False
+            variable_verification["has_required_missing"] = True
+
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
 
     response = {
         "success": True,
-        "version": "1.0",
+        "version": "1.1",
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "processing_time_ms": processing_time_ms,
         "intent_classification": {
@@ -312,9 +359,20 @@ def draft():
             },
             "safety_mode": classification.get("safety_mode"),
         },
+        "strategy": {
+            "selected": strategy_result["strategy"],
+            "reason": strategy_result["reason"],
+            "template_id": strategy_result.get("template_id"),
+        },
         "draft": {
             "type": draft_result["type"],
             "response_text": draft_result["response_text"],
+        },
+        "variable_verification": {
+            "all_satisfied": variable_verification["all_satisfied"],
+            "missing": variable_verification["missing"],
+            "satisfied": variable_verification["satisfied"],
+            "has_required_missing": variable_verification.get("has_required_missing", False),
         },
         "auto_send": bool(auto_send_result.get("auto_send")),
         "auto_send_reason": auto_send_result.get("auto_send_reason"),
