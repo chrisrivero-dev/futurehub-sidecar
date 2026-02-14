@@ -1,3 +1,5 @@
+print("🧠 Logging ticket memory:", ticket_data.get("ticket_id"))
+
 # routes/ai_draft.py
 """
 AI Draft Generation API
@@ -47,6 +49,26 @@ def draft():
             subject=subject,
             latest_message=latest_message,
             customer_name=customer_name,
+        )
+        # 🔵 PHASE 1 — MEMORY LOGGING
+        from services.ticket_memory_service import log_ticket_memory
+
+        log_ticket_memory(
+            ticket_data={
+                "ticket_id": ticket_id,
+                "subject": subject,
+                "customer_name": customer_name,
+                "latest_message": latest_message,
+            },
+            analysis_data={
+                "intent": primary_intent,
+                "confidence": confidence_score,
+                "risk_level": risk_level,
+                "draft_outcome": draft_outcome,
+                "recommended_action": recommended_action,
+                "auto_send_eligible": auto_send_eligible,
+                "auto_send_used": auto_send_used,
+            }
         )
 
         return jsonify({
