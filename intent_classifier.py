@@ -102,6 +102,17 @@ HARD_MAP_RULES = {
 }
 
 
+# ==========================================================
+# Canonical intent name mapping (normalize before return)
+# ==========================================================
+
+CANONICAL_INTENT_MAP = {
+    "firmware_update_info": "firmware_update",
+    "sync_issue": "sync_delay",
+    "factory_reset_info": "factory_reset",
+}
+
+
 # Keyword definitions with weights (used for scoring after hard-map)
 INTENT_KEYWORDS = {
     "purchase_inquiry": {
@@ -429,13 +440,15 @@ def detect_tone(text):
 def _check_hard_map(text):
     """
     Run deterministic hard-map rules BEFORE any scoring.
-    Returns (intent, True) if a hard match is found, else (None, False).
+    Returns list of all matched intents (may be 0, 1, or multiple).
     """
+    matched = []
     for intent, phrases in HARD_MAP_RULES.items():
         for phrase in phrases:
             if phrase in text:
-                return intent, True
-    return None, False
+                matched.append(intent)
+                break  # one phrase per intent is enough
+    return matched
 
 
 def _compute_keyword_scores(text):
@@ -533,8 +546,9 @@ def detect_intent(subject, message, metadata=None):
     """
     Classify intent based on keywords and signals.
     Hard-map rules run FIRST (deterministic).
-    Keyword scoring runs SECOND (fallback).
-    Confidence computed via structured weighted components.
+    - Exactly 1 hard match → short-circuit with 0.90 confidence
+    - Multiple hard matches → ambiguity, fall through to scoring, cap 0.75
+    - No hard match → keyword scoring fallback
     """
 
     # -----------------------------
@@ -553,28 +567,55 @@ def detect_intent(subject, message, metadata=None):
 
     attempted_actions = detect_attempted_actions(text)
     device_behavior_detected = False
+    tone_modifier = detect_tone(text)
 
     # -----------------------------
     # STEP 1: Hard-map rules (deterministic, runs FIRST)
     # -----------------------------
-    hard_intent, hard_matched = _check_hard_map(text)
+    hard_matches = _check_hard_map(text)
 
     # -----------------------------
-    # STEP 2: Keyword scoring (always runs for secondary intents)
+    # SINGLE hard match → short-circuit (skip scoring entirely)
+    # -----------------------------
+    if len(hard_matches) == 1:
+        primary_intent = CANONICAL_INTENT_MAP.get(hard_matches[0], hard_matches[0])
+        safety_mode = "unsafe" if primary_intent in UNSAFE_INTENTS else "safe"
+
+        return {
+            "primary_intent": primary_intent,
+            "secondary_intents": [],
+            "confidence": {
+                "intent_confidence": 0.90,
+                "ambiguity_detected": False,
+            },
+            "tone_modifier": tone_modifier,
+            "safety_mode": safety_mode,
+            "device_behavior_detected": device_behavior_detected,
+            "attempted_actions": attempted_actions,
+            "scores": {primary_intent: 20.0},
+        }
+
+    # -----------------------------
+    # MULTIPLE hard matches → ambiguity, fall through to scoring
+    # -----------------------------
+    multi_hard = len(hard_matches) > 1
+
+    # -----------------------------
+    # STEP 2: Keyword scoring
     # -----------------------------
     scores = _compute_keyword_scores(text)
 
-    # If hard-mapped, boost that intent's score to ensure it wins
-    if hard_matched and hard_intent:
-        scores[hard_intent] = max(scores[hard_intent], 20.0)
+    # Boost all hard-matched intents so they rank high
+    for hi in hard_matches:
+        scores[hi] = max(scores[hi], 20.0)
 
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
     # -----------------------------
     # Determine primary intent
     # -----------------------------
-    if hard_matched and hard_intent:
-        primary_intent = hard_intent
+    if hard_matches:
+        primary_intent = hard_matches[0]
     else:
         primary_intent, max_score = sorted_scores[0]
         if max_score < 2.0:
@@ -588,8 +629,11 @@ def detect_intent(subject, message, metadata=None):
         if score >= 3.0 and intent != primary_intent
     ]
 
-    # Ambiguity: multiple strong competing intents
-    if len(sorted_scores) >= 2:
+    if multi_hard:
+        # Multiple hard matches = definite ambiguity
+        ambiguity_detected = True
+        secondary_intents = [hi for hi in hard_matches[1:] if hi != primary_intent]
+    elif len(sorted_scores) >= 2:
         top_score = sorted_scores[0][1]
         runner_score = sorted_scores[1][1]
         ambiguity_detected = (
@@ -601,14 +645,11 @@ def detect_intent(subject, message, metadata=None):
     else:
         ambiguity_detected = False
 
-    # Hard-matched intents are never ambiguous
-    if hard_matched:
-        ambiguity_detected = False
-
     # -----------------------------
     # Post-classification metadata
     # -----------------------------
-    tone_modifier = detect_tone(text)
+    # Canonicalize intent name
+    primary_intent = CANONICAL_INTENT_MAP.get(primary_intent, primary_intent)
     safety_mode = "unsafe" if primary_intent in UNSAFE_INTENTS else "safe"
 
     # -----------------------------
@@ -616,12 +657,16 @@ def detect_intent(subject, message, metadata=None):
     # -----------------------------
     intent_confidence = _compute_confidence(
         primary_intent=primary_intent,
-        hard_matched=hard_matched,
+        hard_matched=len(hard_matches) > 0,
         scores=scores,
         secondary_intents=secondary_intents,
         ambiguity_detected=ambiguity_detected,
         safety_mode=safety_mode,
     )
+
+    # Multi-hard-match: cap confidence at 0.75
+    if multi_hard:
+        intent_confidence = min(intent_confidence, 0.75)
 
     return {
         "primary_intent": primary_intent,
