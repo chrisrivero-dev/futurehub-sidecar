@@ -272,28 +272,13 @@ def draft():
     # ==========================================================
     # STEP 6: Build augmented message for LLM (ALWAYS runs)
     #
-    # The LLM receives:
-    #   - The customer message
-    #   - Conversation history context
-    #   - Extracted metadata
-    #   - Top matching templates as reference material
-    #
-    # The prompt instructs the LLM to:
-    #   - Identify ALL explicit and implicit questions
-    #   - Answer them in order
-    #   - Incorporate official template language where applicable
-    #   - NOT ignore secondary questions
-    #   - NOT return raw template text without contextualization
+    # Uses strictly-delimited prompt construction:
+    #   - CUSTOMER MESSAGE appears first as authoritative source
+    #   - Templates provided as reference guidance only
+    #   - Final instruction ensures all questions are addressed
     # ==========================================================
-    augmented_message = _build_augmented_message(
-        latest_message=latest_message,
-        subject=subject,
-        intent=intent,
-        safety_mode=safety_mode,
-        extracted_data=extracted_data,
-        matched_templates=matched_templates,
-        conversation_history=conversation_history,
-    )
+    template_candidates = matched_templates
+    augmented_input = prepare_augmented_message(latest_message, template_candidates)
 
     agent_history = [
         m["text"]
@@ -302,7 +287,7 @@ def draft():
     ]
 
     draft_output = generate_draft(
-        latest_message=augmented_message,
+        latest_message=augmented_input,
         intent=intent,
         prior_draft=agent_history[-1] if agent_history else None,
         prior_agent_messages=agent_history,
@@ -327,14 +312,15 @@ def draft():
 
     # ==========================================================
     # STEP 7: Detect which template was materially used
+    #         (informational only — does NOT gate any logic)
     # ==========================================================
-    used_template_id = _detect_used_template(
+    template_usage_guess = _detect_used_template(
         draft_text=draft_result.get("response_text", ""),
-        matched_templates=matched_templates,
+        matched_templates=template_candidates,
     )
 
     # Override strategy template_id with actual detected usage
-    strategy_result["template_id"] = used_template_id
+    strategy_result["template_id"] = template_usage_guess
 
     # ==========================================================
     # STEP 8: Customer Name Injection
@@ -419,6 +405,11 @@ def draft():
             "requires_review": not bool(auto_send_result.get("auto_send")),
             "reason": auto_send_result.get("auto_send_reason"),
         },
+        "template_suggestions": [
+            {"id": t["id"], "title": t["title"]}
+            for t in template_candidates
+        ],
+        "template_usage_guess": template_usage_guess,
         "freshdesk": {
             "issue_type": issue_type,
             "product": metadata.get("product") or "other",
@@ -515,86 +506,31 @@ def _match_templates(intent, message, canned_responses):
 # Augmented Message Builder
 # ==========================================================
 
-def _build_augmented_message(
-    *,
-    latest_message,
-    subject,
-    intent,
-    safety_mode,
-    extracted_data,
-    matched_templates,
-    conversation_history,
-):
+def prepare_augmented_message(latest_message, matched_templates):
     """
-    Build an enriched user message for generate_draft().
-    Includes customer message, metadata, and template context
-    with explicit instructions for the LLM.
+    Constructs a strictly-delimited augmented prompt.
+    Prevents instruction pollution.
+    CUSTOMER MESSAGE always appears first as the authoritative source.
     """
-    parts = []
+    prompt = "=== CUSTOMER MESSAGE (AUTHORITATIVE SOURCE) ===\n"
+    prompt += f"{latest_message}\n\n"
 
-    # --- Instruction block (prepended to user message) ---
-    parts.append(
-        "=== INSTRUCTIONS ===\n"
-        "You are drafting a customer support reply. Follow these rules:\n"
-        "1. Read the customer message below carefully.\n"
-        "2. Identify ALL explicit questions AND implicit questions (things the "
-        "customer clearly wants answered even if not phrased as a question).\n"
-        "3. Answer each question in order. Do NOT skip secondary questions.\n"
-        "4. If reference templates are provided below, incorporate their "
-        "official language and factual details into your answer — but do NOT "
-        "copy-paste a template verbatim. Contextualize it to this specific "
-        "customer's situation.\n"
-        "5. If no template is relevant, answer from first principles.\n"
-        "6. Keep the tone calm, professional, and helpful.\n"
-        "7. If you genuinely need more information to answer, ask ONE clear "
-        "follow-up — but still answer whatever you CAN answer first.\n"
-        "=== END INSTRUCTIONS ==="
-    )
-
-    # --- Ticket metadata ---
-    meta_lines = [f"Subject: {subject}", f"Detected intent: {intent}"]
-    if safety_mode:
-        meta_lines.append(f"Safety mode: {safety_mode}")
-    for k, v in extracted_data.items():
-        meta_lines.append(f"{k}: {v}")
-    parts.append("=== TICKET METADATA ===\n" + "\n".join(meta_lines) + "\n=== END METADATA ===")
-
-    # --- Reference templates ---
     if matched_templates:
-        tmpl_block = []
-        for i, t in enumerate(matched_templates, 1):
-            tmpl_block.append(
-                f"--- Template {i}: {t['title']} ---\n{t['content']}\n--- End Template {i} ---"
-            )
-        parts.append(
-            "=== REFERENCE TEMPLATES ===\n"
-            "Use these as factual reference. Incorporate relevant details but "
-            "adapt the language to address this specific customer's questions.\n\n"
-            + "\n\n".join(tmpl_block)
-            + "\n=== END TEMPLATES ==="
-        )
+        prompt += "=== TEMPLATE REFERENCES (FOR GUIDANCE, DO NOT COPY VERBATIM) ===\n"
+        for idx, temp in enumerate(matched_templates, 1):
+            prompt += f"[Reference {idx}: {temp['title']} (ID: {temp['id']})]\n"
+            prompt += f"{temp['content']}\n\n"
 
-    # --- Conversation history (last 4 messages for context) ---
-    recent = []
-    for m in (conversation_history or [])[-4:]:
-        if isinstance(m, dict) and m.get("text"):
-            role = m.get("role", "unknown")
-            recent.append(f"[{role}] {m['text']}")
-    if recent:
-        parts.append(
-            "=== CONVERSATION HISTORY ===\n"
-            + "\n".join(recent)
-            + "\n=== END HISTORY ==="
-        )
-
-    # --- Customer message (the actual content to respond to) ---
-    parts.append(
-        "=== CUSTOMER MESSAGE ===\n"
-        + latest_message
-        + "\n=== END CUSTOMER MESSAGE ==="
+    prompt += "=== FINAL INSTRUCTION ===\n"
+    prompt += (
+        "Identify and answer ALL explicit and implicit questions in the CUSTOMER MESSAGE.\n"
+        "Use TEMPLATE REFERENCES only to ensure policy accuracy.\n"
+        "Do not copy template text verbatim.\n"
+        "If the message contains bespoke details not covered by templates, use reasoning.\n"
+        "Do not skip secondary questions.\n"
     )
 
-    return "\n\n".join(parts)
+    return prompt
 
 
 # ==========================================================
