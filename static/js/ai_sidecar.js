@@ -173,6 +173,16 @@ class AISidecar {
       });
     }
 
+    // Manual Process Ticket button (standalone fallback)
+    this.processTicketBtn = document.getElementById('process-ticket-btn');
+    if (this.processTicketBtn) {
+      this.processTicketBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.processTicket();
+      });
+    }
+
     // Insert into CRM button
     if (this.insertCrmBtn) {
       this.insertCrmBtn.addEventListener('click', (e) => {
@@ -232,6 +242,29 @@ class AISidecar {
     this.generateDraft().finally(() => {
       this._isAutoRunning = false;
     });
+  }
+
+  // -----------------------------
+  // Manual Process Ticket (standalone fallback)
+  // -----------------------------
+  processTicket() {
+    const subject = document.getElementById('subject')?.value?.trim();
+    const latestMessage = document.getElementById('latest-message')?.value?.trim();
+    const customerName = document.getElementById('customer-name')?.value?.trim();
+
+    if (!subject || !latestMessage) {
+      this.showToast('Subject and Latest Message are required', 'error');
+      return;
+    }
+
+    // Update status indicator
+    const statusEl = document.getElementById('auto-run-status');
+    if (statusEl) {
+      statusEl.textContent = 'Processing ticket...';
+      statusEl.className = 'auto-run-status status-loading';
+    }
+
+    this.generateDraft();
   }
 
   // -----------------------------
