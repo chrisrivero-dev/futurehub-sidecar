@@ -6,7 +6,7 @@ Rule-based, deterministic intent detection for support tickets
 print(">>> intent_classifier loaded from:", __file__)
 
 
-# Intent taxonomy (9 intents)
+# Intent taxonomy
 INTENTS = [
     "shipping_status",
     "setup_help",
@@ -17,8 +17,11 @@ INTENTS = [
     "purchase_inquiry",
     "performance_issue",
     "warranty_rma",
+    "dashboard_issue",
+    "factory_reset",
+    "sync_issue",
     "general_question",
-    "unknown_vague"
+    "unknown_vague",
 ]
 
 # Safety classification
@@ -26,23 +29,82 @@ SAFE_INTENTS = [
     "shipping_status",
     "setup_help",
     "firmware_update",
-    "purchase_inquiry",  # ✅ SAFE + AUTO-SEND ELIGIBLE
+    "purchase_inquiry",
     "general_question",
-    "warranty_rma"
+    "warranty_rma",
+    "factory_reset",
+    "dashboard_issue",
 ]
 
 UNSAFE_INTENTS = [
     "not_hashing",
     "sync_delay",
+    "sync_issue",
     "firmware_issue",
-    "performance_issue"
+    "performance_issue",
 ]
 
 
+# ==========================================================
+# PART 1 — Deterministic hard-map rules (run FIRST)
+# Each entry: intent -> list of phrases that force that intent
+# ==========================================================
 
-# Keyword definitions with weights
+HARD_MAP_RULES = {
+    "shipping_status": [
+        "where is my order",
+        "tracking says delivered",
+        "never received",
+        "shipping time",
+        "how long does shipping take",
+        "delivery problem",
+        "missing package",
+    ],
+    "firmware_update": [
+        "update firmware",
+        "firmware update",
+        "flash firmware",
+        "upload firmware",
+    ],
+    "not_hashing": [
+        "not hashing",
+        "no hashrate",
+        "hashrate dropped",
+        "won't hash",
+    ],
+    "factory_reset": [
+        "factory reset",
+        "reset my unit",
+        "restore default",
+    ],
+    "dashboard_issue": [
+        "dashboard not load",
+        "dashboard won't load",
+        "cannot access dashboard",
+    ],
+    "sync_issue": [
+        "node not sync",
+        "not syncing",
+        "sync stuck",
+    ],
+    "warranty_rma": [
+        "refund",
+        "return",
+        "replacement",
+        "warranty coverage",
+        "secondhand warranty",
+    ],
+    "performance_issue": [
+        "fan loud",
+        "overheating",
+        "temperature high",
+    ],
+}
+
+
+# Keyword definitions with weights (used for scoring after hard-map)
 INTENT_KEYWORDS = {
-        "purchase_inquiry": {
+    "purchase_inquiry": {
         "trigger_phrases": [
             "want to purchase",
             "want to buy",
@@ -54,27 +116,17 @@ INTENT_KEYWORDS = {
             "purchase a node",
         ],
         "strong_signals": [
-            "purchase",
-            "buy",
-            "order",
-            "pricing",
-            "cost",
-            "price",
-            "availability",
+            "purchase", "buy", "order", "pricing",
+            "cost", "price", "availability",
         ],
         "weak_signals": [
-            "another",
-            "node",
-            "unit",
+            "another", "node", "unit",
         ],
     },
-
     "shipping_status": {
         "trigger_phrases": [
             "where is my order",
             "where's my order",
-            "purchase_inquiry"
-            
             "track my order",
             "shipping status",
             "delivery status",
@@ -82,18 +134,23 @@ INTENT_KEYWORDS = {
             "when will it ship",
             "order hasn't arrived",
             "package hasn't arrived",
-            "tracking number"
+            "tracking number",
+            "tracking says delivered",
+            "never received",
+            "shipping time",
+            "how long does shipping take",
+            "delivery problem",
+            "missing package",
         ],
         "strong_signals": [
             "shipment", "delivery", "tracking", "shipped",
             "fedex", "ups", "usps", "eta", "estimated delivery",
-            "order status"
+            "order status",
         ],
         "weak_signals": [
-            "order", "package", "waiting", "arrived", "receive"
-        ]
+            "order", "package", "waiting", "arrived", "receive",
+        ],
     },
-    
     "setup_help": {
         "trigger_phrases": [
             "how do i set up",
@@ -105,18 +162,17 @@ INTENT_KEYWORDS = {
             "can't connect to apollo.local",
             "pool configuration",
             "how do i connect to pool",
-            "setup guide"
+            "setup guide",
         ],
         "strong_signals": [
             "setup", "configure", "configuration", "web interface",
             "apollo.local", "pool settings", "pool url", "worker name",
-            "first time", "brand new"
+            "first time", "brand new",
         ],
         "weak_signals": [
-            "how do i", "how to", "instructions", "guide", "tutorial"
-        ]
+            "how do i", "how to", "instructions", "guide", "tutorial",
+        ],
     },
-    
     "not_hashing": {
         "trigger_phrases": [
             "0 h/s",
@@ -129,18 +185,19 @@ INTENT_KEYWORDS = {
             "no shares accepted",
             "shares not submitting",
             "worker not found",
-            "not mining"  # Added - very specific
+            "not mining",
+            "hashrate dropped",
+            "won't hash",
         ],
         "strong_signals": [
             "mining stopped", "no shares",
             "shares rejected", "hashrate dropped", "hashrate zero",
-            "can't mine", "won't mine"
+            "can't mine", "won't mine",
         ],
         "weak_signals": [
-            "hashrate", "mining", "shares", "h/s"
-        ]
+            "hashrate", "mining", "shares", "h/s",
+        ],
     },
-    
     "sync_delay": {
         "trigger_phrases": [
             "stuck syncing",
@@ -151,18 +208,31 @@ INTENT_KEYWORDS = {
             "syncing slowly",
             "sync taking forever",
             "blockchain won't sync",
-            "node stuck"
+            "node stuck",
+            "node not sync",
         ],
         "strong_signals": [
             "sync", "syncing", "synchronizing", "blockchain",
             "block height", "downloading blocks", "verification",
-            "blocks behind"
+            "blocks behind",
         ],
         "weak_signals": [
-            "block", "progress", "loading"
-        ]
+            "block", "progress", "loading",
+        ],
     },
-    
+    "sync_issue": {
+        "trigger_phrases": [
+            "node not sync",
+            "not syncing",
+            "sync stuck",
+        ],
+        "strong_signals": [
+            "sync", "syncing", "synchronizing", "blockchain",
+        ],
+        "weak_signals": [
+            "block", "progress",
+        ],
+    },
     "firmware_issue": {
         "trigger_phrases": [
             "firmware update failed",
@@ -173,18 +243,33 @@ INTENT_KEYWORDS = {
             "device bricked",
             "screen is black",
             "won't boot",
-            "stuck on boot"
+            "stuck on boot",
         ],
         "strong_signals": [
             "update failed", "ui frozen",
             "interface frozen", "unresponsive", "bricked",
-            "won't start", "won't boot"
+            "won't start", "won't boot",
         ],
         "weak_signals": [
-            "update", "interface", "ui", "screen", "load"
-        ]
+            "update", "interface", "ui", "screen", "load",
+        ],
     },
-    
+    "firmware_update": {
+        "trigger_phrases": [
+            "update firmware",
+            "firmware update",
+            "flash firmware",
+            "upload firmware",
+            "how to update firmware",
+            "firmware upgrade",
+        ],
+        "strong_signals": [
+            "firmware", "update", "flash", "upgrade",
+        ],
+        "weak_signals": [
+            "version", "latest",
+        ],
+    },
     "performance_issue": {
         "trigger_phrases": [
             "keeps restarting",
@@ -195,18 +280,19 @@ INTENT_KEYWORDS = {
             "fans are loud",
             "fans running full speed",
             "unstable",
-            "intermittent"
+            "intermittent",
+            "fan loud",
+            "temperature high",
         ],
         "strong_signals": [
             "restarting", "rebooting", "crashing", "hot",
             "temperature", "fan noise", "loud fan",
-            "random restarts", "disconnecting"
+            "random restarts", "disconnecting",
         ],
         "weak_signals": [
-            "restart", "crash", "fan", "noise", "temperature"
-        ]
+            "restart", "crash", "fan", "noise", "temperature",
+        ],
     },
-    
     "warranty_rma": {
         "trigger_phrases": [
             "want a refund",
@@ -218,17 +304,48 @@ INTENT_KEYWORDS = {
             "doesn't work at all",
             "broken on arrival",
             "dead on arrival",
-            "doa"
+            "doa",
+            "warranty coverage",
+            "secondhand warranty",
         ],
         "strong_signals": [
             "refund", "return", "warranty", "rma",
-            "defective", "broken", "exchange", "replacement"
+            "defective", "broken", "exchange", "replacement",
         ],
         "weak_signals": [
-            "policy", "covered", "guarantee"
-        ]
+            "policy", "covered", "guarantee",
+        ],
     },
-    
+    "factory_reset": {
+        "trigger_phrases": [
+            "factory reset",
+            "reset my unit",
+            "restore default",
+            "reset to factory",
+            "hard reset",
+        ],
+        "strong_signals": [
+            "factory", "reset", "restore", "default",
+        ],
+        "weak_signals": [
+            "wipe", "clean",
+        ],
+    },
+    "dashboard_issue": {
+        "trigger_phrases": [
+            "dashboard not load",
+            "dashboard won't load",
+            "cannot access dashboard",
+            "dashboard not working",
+            "dashboard blank",
+        ],
+        "strong_signals": [
+            "dashboard", "web ui", "control panel",
+        ],
+        "weak_signals": [
+            "page", "browser",
+        ],
+    },
     "general_question": {
         "trigger_phrases": [
             "what is",
@@ -237,17 +354,19 @@ INTENT_KEYWORDS = {
             "what's the difference between",
             "how do i know if",
             "is it normal",
-            "should i"
+            "should i",
         ],
         "strong_signals": [
             "question about", "wondering", "curious",
-            "understand", "explain", "difference", "mean"
+            "understand", "explain", "difference", "mean",
         ],
         "weak_signals": [
-            "how", "why", "what", "when"
-        ]
-    }
+            "how", "why", "what", "when",
+        ],
+    },
 }
+
+
 def detect_attempted_actions(text):
     """Detect steps customer has already tried"""
     actions = []
@@ -307,44 +426,20 @@ def detect_tone(text):
     return "neutral"
 
 
-def calculate_max_possible_score(intent):
-    """Calculate theoretical max score for an intent"""
-    keywords = INTENT_KEYWORDS.get(intent, {})
-
-    max_score = 0.0
-    max_score += len(keywords.get("trigger_phrases", [])) * 4.0
-    max_score += len(keywords.get("strong_signals", [])) * 2.0
-    max_score += len(keywords.get("weak_signals", [])) * 1.0
-
-    return max_score if max_score > 0 else 10.0
-
-# PHASE 1.2 LOCKED — setup_help hard detection
-# Do not modify without updating tests
-def detect_intent(subject, message, metadata=None):
+def _check_hard_map(text):
     """
-    Classify intent based on keywords and signals.
+    Run deterministic hard-map rules BEFORE any scoring.
+    Returns (intent, True) if a hard match is found, else (None, False).
     """
+    for intent, phrases in HARD_MAP_RULES.items():
+        for phrase in phrases:
+            if phrase in text:
+                return intent, True
+    return None, False
 
-    # -----------------------------
-    # Normalize input
-    # -----------------------------
-    subject = (subject or "").strip()
-    message = (message or "").strip()
-    text = f"{subject} {message}".lower()
 
-    text = (
-        text.replace("’", "'")
-            .replace("‘", "'")
-            .replace("“", '"')
-            .replace("”", '"')
-    )
-
-    attempted_actions = detect_attempted_actions(text)
-    device_behavior_detected = False
-
-    # -----------------------------
-    # Initialize scores
-    # -----------------------------
+def _compute_keyword_scores(text):
+    """Compute weighted keyword scores for all intents."""
     scores = {intent: 0.0 for intent in INTENTS}
 
     for intent, keywords in INTENT_KEYWORDS.items():
@@ -364,22 +459,150 @@ def detect_intent(subject, message, metadata=None):
 
         scores[intent] = score
 
+    return scores
+
+
+# ==========================================================
+# PART 2 — Structured Confidence Scoring
+# ==========================================================
+
+def _compute_confidence(
+    primary_intent,
+    hard_matched,
+    scores,
+    secondary_intents,
+    ambiguity_detected,
+    safety_mode,
+):
+    """
+    Compute confidence using weighted structured components:
+      base_intent_match_score
+      * keyword_density_score
+      * ambiguity_penalty
+      * multi_intent_penalty
+      * safety_penalty
+
+    Rules:
+      - Single clear deterministic match -> minimum 0.85 base
+      - Multi-question -> subtract 0.15
+      - Ambiguous language -> subtract 0.20
+      - Unknown intent -> cap at 0.40 maximum
+      - Safety_mode unsafe -> cap at 0.60 maximum
+    """
+    if primary_intent == "unknown_vague":
+        return min(0.40, 0.20)
+
+    # Base score: hard-matched deterministic = 0.85 minimum
+    if hard_matched:
+        base = 0.90
+    else:
+        # Score-based: scale raw score into 0.50-0.85 range
+        raw = scores.get(primary_intent, 0.0)
+        if raw >= 8.0:
+            base = 0.85
+        elif raw >= 6.0:
+            base = 0.78
+        elif raw >= 4.0:
+            base = 0.70
+        elif raw >= 2.0:
+            base = 0.60
+        else:
+            base = 0.50
+
+    confidence = base
+
+    # Multi-intent penalty
+    if len(secondary_intents) > 0:
+        confidence -= 0.15
+
+    # Ambiguity penalty
+    if ambiguity_detected:
+        confidence -= 0.20
+
+    # Safety cap
+    if safety_mode == "unsafe":
+        confidence = min(confidence, 0.60)
+
+    # Clamp
+    confidence = max(0.10, min(1.0, confidence))
+
+    return round(confidence, 2)
+
+
+def detect_intent(subject, message, metadata=None):
+    """
+    Classify intent based on keywords and signals.
+    Hard-map rules run FIRST (deterministic).
+    Keyword scoring runs SECOND (fallback).
+    Confidence computed via structured weighted components.
+    """
+
+    # -----------------------------
+    # Normalize input
+    # -----------------------------
+    subject = (subject or "").strip()
+    message = (message or "").strip()
+    text = f"{subject} {message}".lower()
+
+    text = (
+        text.replace("\u2018", "'")
+            .replace("\u2019", "'")
+            .replace("\u201c", '"')
+            .replace("\u201d", '"')
+    )
+
+    attempted_actions = detect_attempted_actions(text)
+    device_behavior_detected = False
+
+    # -----------------------------
+    # STEP 1: Hard-map rules (deterministic, runs FIRST)
+    # -----------------------------
+    hard_intent, hard_matched = _check_hard_map(text)
+
+    # -----------------------------
+    # STEP 2: Keyword scoring (always runs for secondary intents)
+    # -----------------------------
+    scores = _compute_keyword_scores(text)
+
+    # If hard-mapped, boost that intent's score to ensure it wins
+    if hard_matched and hard_intent:
+        scores[hard_intent] = max(scores[hard_intent], 20.0)
+
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
     # -----------------------------
     # Determine primary intent
     # -----------------------------
-    primary_intent, max_score = sorted_scores[0]
-
-    if max_score < 2.0:
-        primary_intent = "unknown_vague"
-        intent_confidence = 0.2
-        ambiguity_detected = False
+    if hard_matched and hard_intent:
+        primary_intent = hard_intent
     else:
-        intent_confidence = min(
-            scores[primary_intent] / calculate_max_possible_score(primary_intent),
-            1.0,
+        primary_intent, max_score = sorted_scores[0]
+        if max_score < 2.0:
+            primary_intent = "unknown_vague"
+
+    # -----------------------------
+    # Detect secondary intents and ambiguity
+    # -----------------------------
+    secondary_intents = [
+        intent for intent, score in sorted_scores[1:3]
+        if score >= 3.0 and intent != primary_intent
+    ]
+
+    # Ambiguity: multiple strong competing intents
+    if len(sorted_scores) >= 2:
+        top_score = sorted_scores[0][1]
+        runner_score = sorted_scores[1][1]
+        ambiguity_detected = (
+            top_score > 0
+            and runner_score > 0
+            and (runner_score / top_score) >= 0.75
+            and sorted_scores[0][0] != sorted_scores[1][0]
         )
+    else:
+        ambiguity_detected = False
+
+    # Hard-matched intents are never ambiguous
+    if hard_matched:
         ambiguity_detected = False
 
     # -----------------------------
@@ -388,16 +611,23 @@ def detect_intent(subject, message, metadata=None):
     tone_modifier = detect_tone(text)
     safety_mode = "unsafe" if primary_intent in UNSAFE_INTENTS else "safe"
 
-    secondary_intents = [
-        intent for intent, score in sorted_scores[1:3]
-        if score >= 3.0 and intent != primary_intent
-    ]
+    # -----------------------------
+    # Structured confidence scoring
+    # -----------------------------
+    intent_confidence = _compute_confidence(
+        primary_intent=primary_intent,
+        hard_matched=hard_matched,
+        scores=scores,
+        secondary_intents=secondary_intents,
+        ambiguity_detected=ambiguity_detected,
+        safety_mode=safety_mode,
+    )
 
     return {
         "primary_intent": primary_intent,
         "secondary_intents": secondary_intents,
         "confidence": {
-            "intent_confidence": round(intent_confidence, 2),
+            "intent_confidence": intent_confidence,
             "ambiguity_detected": ambiguity_detected,
         },
         "tone_modifier": tone_modifier,

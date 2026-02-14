@@ -354,6 +354,10 @@ def draft():
     # ==========================================================
     # STEP 10: Auto-Send Evaluation
     # ==========================================================
+    # Inject ambiguity and variable flags so auto-send gating can check them
+    missing_information["ambiguity_detected"] = ambiguity_detected
+    missing_information["has_required_missing"] = variable_verification.get("has_required_missing", False)
+
     auto_send_result = evaluate_auto_send(
         message=latest_message,
         intent=intent,
