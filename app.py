@@ -16,6 +16,8 @@ from ai.draft_generator import generate_draft
 from ai.intent_normalization import normalize_intent
 from ai.missing_info_detector import detect_missing_information
 from ai.auto_send_evaluator import evaluate_auto_send
+from ai.strategy_engine import select_strategy
+from ai.template_bridge import scanAndVerifyVariables, bridgeMetadataToTemplate, prepare_template_draft
 
 from routes.sidecar_ui import sidecar_ui_bp
 from routes.insights import insights_bp
@@ -156,7 +158,6 @@ def get_confidence_label(confidence: float) -> str:
 @app.route("/api/v1/draft", methods=["POST"])
 def draft():
     start_time = time.perf_counter()
-    autosend_confidence = 0.0
 
     try:
         data = request.get_json() or {}
@@ -165,23 +166,19 @@ def draft():
 
     subject = str(data.get("subject") or "").strip()
     latest_message = str(data.get("latest_message") or "").strip()
-
-    # 🔧 FIX: normalize payload for downstream code
-    message = str(data.get("message") or "").strip() or latest_message
-
     conversation_history = data.get("conversation_history") or []
 
     if not subject or not latest_message:
         return error_response("invalid_input", "subject and latest_message are required")
 
-    # --- everything else in your function continues here ---
-
-
     metadata = data.get("metadata") or {}
     attachments = metadata.get("attachments") or []
 
+    # ==========================================================
+    # STEP 1: Intent Classification (deterministic, no LLM)
+    # ==========================================================
     classification = detect_intent(
-         subject,
+        subject,
         latest_message,
         metadata={
             "order_number": metadata.get("order_number"),
@@ -190,11 +187,8 @@ def draft():
         },
     )
 
-    # Shipping override
-    combined = f"{subject} {latest_message}".lower()
     # Shipping override — ONLY if classifier was uncertain
     combined = f"{subject} {latest_message}".lower()
-
     if (
         classification["primary_intent"] == "unknown_vague"
         and any(k in combined for k in ["shipping", "tracking", "where is my"])
@@ -203,7 +197,9 @@ def draft():
         classification["confidence"]["intent_confidence"] = 0.90
         classification["confidence"]["ambiguity_detected"] = False
 
-
+    # ==========================================================
+    # STEP 2: Normalize Intent (deterministic, no LLM)
+    # ==========================================================
     normalized = normalize_intent(
         primary=classification["primary_intent"],
         secondary=classification.get("secondary_intent"),
@@ -213,20 +209,87 @@ def draft():
     issue_type = normalized["issue_type"]
     tags = normalized["tags"]
 
+    confidence_overall = classification["confidence"]["intent_confidence"]
+
+    # ==========================================================
+    # STEP 3: Missing Information Detection (deterministic, no LLM)
+    # ==========================================================
+    last_customer_messages = [
+        m["text"]
+        for m in conversation_history
+        if isinstance(m, dict) and m.get("role") == "customer"
+    ][-2:]
+
+    missing_information = detect_missing_information(
+        messages=last_customer_messages,
+        intent={
+            "primary": classification["primary_intent"],
+            "confidence": confidence_overall,
+        },
+        mode="diagnostic",
+        metadata=metadata,
+    )
+
+    # Safety mode — guaranteed definition
+    safety_mode = classification.get("safety_mode")
+    if not safety_mode:
+        if intent in ("shipping_status", "shipping_eta", "firmware_update_info"):
+            safety_mode = "safe"
+        else:
+            safety_mode = "review_required"
+
+    # ==========================================================
+    # STEP 4: Strategy Selection (metadata/advisory tag only —
+    #         does NOT gate LLM execution)
+    # ==========================================================
+    ambiguity_detected = classification["confidence"].get("ambiguity_detected", False)
+
+    strategy_result = select_strategy(
+        intent=intent,
+        confidence=confidence_overall,
+        safety_mode=safety_mode,
+        missing_info=missing_information,
+        ambiguity_detected=ambiguity_detected,
+    )
+
+    # ==========================================================
+    # STEP 5: Retrieve matching templates (keyword/intent match)
+    # ==========================================================
+    extracted_data = {
+        "customer_name": data.get("customer_name"),
+        "order_number": metadata.get("order_number"),
+        "product": metadata.get("product"),
+        "device_model": metadata.get("product"),
+        "tracking_number": metadata.get("tracking_number"),
+        "firmware_version": metadata.get("firmware_version"),
+        "email": metadata.get("email"),
+    }
+    extracted_data = {k: v for k, v in extracted_data.items() if v is not None}
+
+    canned_responses = _load_canned_responses()
+    matched_templates = _match_templates(intent, latest_message, canned_responses)
+
+    # ==========================================================
+    # STEP 6: Build augmented message for LLM (ALWAYS runs)
+    #
+    # Uses strictly-delimited prompt construction:
+    #   - CUSTOMER MESSAGE appears first as authoritative source
+    #   - Templates provided as reference guidance only
+    #   - Final instruction ensures all questions are addressed
+    # ==========================================================
+    template_candidates = matched_templates
+    augmented_input = prepare_augmented_message(latest_message, template_candidates)
+
     agent_history = [
         m["text"]
         for m in conversation_history
         if isinstance(m, dict) and m.get("role") == "agent"
     ]
-    last_ai_draft = agent_history[-1] if agent_history else None
 
-    # ----------------------------
-    # Draft generation
-    # ----------------------------
     draft_output = generate_draft(
-        latest_message=latest_message,
+        latest_message=augmented_input,
         intent=intent,
-        prior_draft=last_ai_draft,
+        prior_draft=agent_history[-1] if agent_history else None,
         prior_agent_messages=agent_history,
     )
 
@@ -244,6 +307,24 @@ def draft():
             "canned_response_suggestion": None,
         }
 
+    # Always mark LLM as invoked
+    draft_result.setdefault("quality_metrics", {})["llm_invoked"] = True
+
+    # ==========================================================
+    # STEP 7: Detect which template was materially used
+    #         (informational only — does NOT gate any logic)
+    # ==========================================================
+    template_usage_guess = _detect_used_template(
+        draft_text=draft_result.get("response_text", ""),
+        matched_templates=template_candidates,
+    )
+
+    # Override strategy template_id with actual detected usage
+    strategy_result["template_id"] = template_usage_guess
+
+    # ==========================================================
+    # STEP 8: Customer Name Injection
+    # ==========================================================
     draft_text = draft_result.get("response_text", "")
 
     customer_name = data.get("customer_name")
@@ -251,56 +332,50 @@ def draft():
         draft_text = f"{customer_name}, {draft_text}"
         draft_result["response_text"] = draft_text
 
-    confidence_overall = classification["confidence"]["intent_confidence"]
-    autosend_confidence = confidence_overall
+    # ==========================================================
+    # STEP 9: Variable Verification
+    # ==========================================================
+    variable_verification = scanAndVerifyVariables(draft_text, extracted_data)
 
-    # Missing info detection
-    last_customer_messages = [
-        m["text"]
-        for m in conversation_history
-        if isinstance(m, dict) and m.get("role") == "customer"
-    ][-2:]
+    # Merge blocking missing-info items into verification
+    for item in missing_information.get("items", []):
+        key = item.get("key", "")
+        severity = item.get("severity", "non_blocking")
+        already_in = any(m["key"] == key for m in variable_verification["missing"])
+        if not already_in and severity == "blocking":
+            variable_verification["missing"].append({
+                "key": key,
+                "label": key.replace("_", " ").title(),
+                "required": True,
+            })
+            variable_verification["all_satisfied"] = False
+            variable_verification["has_required_missing"] = True
 
-    missing_information = detect_missing_information(
-        messages=last_customer_messages,
-        intent={
-            "primary": classification["primary_intent"],
-            "confidence": confidence_overall,
-        },
-        mode="diagnostic",
-        metadata=metadata,
-    )
-    # -------------------------------------------------
-    # Safety mode — guaranteed definition
-    # -------------------------------------------------
-    safety_mode = classification.get("safety_mode")
+    # ==========================================================
+    # STEP 10: Auto-Send Evaluation
+    # ==========================================================
+    # Inject ambiguity and variable flags so auto-send gating can check them
+    missing_information["ambiguity_detected"] = ambiguity_detected
+    missing_information["has_required_missing"] = variable_verification.get("has_required_missing", False)
 
-    if not safety_mode:
-        if intent in ("shipping_status", "shipping_eta", "firmware_update_info"):
-            safety_mode = "safe"
-        else:
-            safety_mode = "review_required"
-
-
-    # ----------------------------
-    # Auto-send evaluation (FIXED SIGNATURE)
-    # ----------------------------
     auto_send_result = evaluate_auto_send(
-         message=latest_message,
+        message=latest_message,
         intent=intent,
-        intent_confidence=autosend_confidence,
+        intent_confidence=confidence_overall,
         safety_mode=safety_mode,
         draft_text=draft_result,
         acceptance_failures=draft_result.get("quality_metrics", {}).get("acceptance_failures", []),
         missing_information=missing_information,
     )
 
-
+    # ==========================================================
+    # STEP 11: Build Response (v1.1 schema, unchanged)
+    # ==========================================================
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
 
     response = {
         "success": True,
-        "version": "1.0",
+        "version": "1.1",
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "processing_time_ms": processing_time_ms,
         "intent_classification": {
@@ -312,9 +387,20 @@ def draft():
             },
             "safety_mode": classification.get("safety_mode"),
         },
+        "strategy": {
+            "selected": strategy_result["strategy"],
+            "reason": strategy_result["reason"],
+            "template_id": strategy_result.get("template_id"),
+        },
         "draft": {
             "type": draft_result["type"],
             "response_text": draft_result["response_text"],
+        },
+        "variable_verification": {
+            "all_satisfied": variable_verification["all_satisfied"],
+            "missing": variable_verification["missing"],
+            "satisfied": variable_verification["satisfied"],
+            "has_required_missing": variable_verification.get("has_required_missing", False),
         },
         "auto_send": bool(auto_send_result.get("auto_send")),
         "auto_send_reason": auto_send_result.get("auto_send_reason"),
@@ -323,6 +409,11 @@ def draft():
             "requires_review": not bool(auto_send_result.get("auto_send")),
             "reason": auto_send_result.get("auto_send_reason"),
         },
+        "template_suggestions": [
+            {"id": t["id"], "title": t["title"]}
+            for t in template_candidates
+        ],
+        "template_usage_guess": template_usage_guess,
         "freshdesk": {
             "issue_type": issue_type,
             "product": metadata.get("product") or "other",
@@ -331,6 +422,156 @@ def draft():
     }
 
     return jsonify(response), 200
+
+
+# ==========================================================
+# Canned Responses Loader (file-cached)
+# ==========================================================
+import json as _json
+
+_CANNED_RESPONSES_CACHE = None
+
+def _load_canned_responses():
+    global _CANNED_RESPONSES_CACHE
+    if _CANNED_RESPONSES_CACHE is not None:
+        return _CANNED_RESPONSES_CACHE
+
+    canned_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "static", "data", "canned_responses.json",
+    )
+    try:
+        with open(canned_path, "r", encoding="utf-8") as f:
+            _CANNED_RESPONSES_CACHE = _json.load(f)
+    except (FileNotFoundError, _json.JSONDecodeError):
+        _CANNED_RESPONSES_CACHE = []
+
+    return _CANNED_RESPONSES_CACHE
+
+
+# ==========================================================
+# Template Matching — intent + keyword (no vector DB)
+# ==========================================================
+from ai.strategy_engine import TEMPLATE_INTENT_MAP
+
+def _match_templates(intent, message, canned_responses):
+    """
+    Return top matching templates as list of {id, title, content}.
+    Uses intent map first, then keyword fallback.
+    Max 2 templates returned.
+    """
+    if not canned_responses:
+        return []
+
+    by_id = {str(t.get("id")): t for t in canned_responses}
+    matched = []
+    seen_ids = set()
+
+    # 1) Primary: intent-mapped template
+    primary_id = TEMPLATE_INTENT_MAP.get(intent)
+    if primary_id and primary_id in by_id:
+        t = by_id[primary_id]
+        matched.append({
+            "id": str(t["id"]),
+            "title": t.get("title", ""),
+            "content": t.get("content", ""),
+        })
+        seen_ids.add(primary_id)
+
+    # 2) Secondary: keyword scan across all templates
+    msg_lower = message.lower()
+    for t in canned_responses:
+        tid = str(t.get("id", ""))
+        if tid in seen_ids:
+            continue
+
+        title = (t.get("title") or "").lower()
+        content = (t.get("content") or "").lower()
+
+        # Check if significant words from the message appear in template
+        title_words = set(title.split())
+        # Match if >=2 title words appear in message, or title substring match
+        overlap = sum(1 for w in title_words if len(w) > 3 and w in msg_lower)
+        if overlap >= 2 or title in msg_lower:
+            matched.append({
+                "id": tid,
+                "title": t.get("title", ""),
+                "content": t.get("content", ""),
+            })
+            seen_ids.add(tid)
+
+        if len(matched) >= 2:
+            break
+
+    return matched
+
+
+# ==========================================================
+# Augmented Message Builder
+# ==========================================================
+
+def prepare_augmented_message(latest_message, matched_templates):
+    """
+    Constructs a strictly-delimited augmented prompt.
+    Prevents instruction pollution.
+    CUSTOMER MESSAGE always appears first as the authoritative source.
+    """
+    prompt = "=== CUSTOMER MESSAGE (AUTHORITATIVE SOURCE) ===\n"
+    prompt += f"{latest_message}\n\n"
+
+    if matched_templates:
+        prompt += "=== TEMPLATE REFERENCES (FOR GUIDANCE, DO NOT COPY VERBATIM) ===\n"
+        for idx, temp in enumerate(matched_templates, 1):
+            prompt += f"[Reference {idx}: {temp['title']} (ID: {temp['id']})]\n"
+            prompt += f"{temp['content']}\n\n"
+
+    prompt += "=== FINAL INSTRUCTION ===\n"
+    prompt += (
+        "Identify and answer ALL explicit and implicit questions in the CUSTOMER MESSAGE.\n"
+        "Use TEMPLATE REFERENCES only to ensure policy accuracy.\n"
+        "Do not copy template text verbatim.\n"
+        "If the message contains bespoke details not covered by templates, use reasoning.\n"
+        "Do not skip secondary questions.\n"
+    )
+
+    return prompt
+
+
+# ==========================================================
+# Template Usage Detection (post-LLM)
+# ==========================================================
+
+def _detect_used_template(draft_text, matched_templates):
+    """
+    After the LLM generates a draft, detect which template (if any)
+    was materially used by checking phrase overlap.
+    Returns template_id or None.
+    """
+    if not draft_text or not matched_templates:
+        return None
+
+    draft_lower = draft_text.lower()
+    best_id = None
+    best_score = 0
+
+    for t in matched_templates:
+        content = (t.get("content") or "").lower()
+        if not content:
+            continue
+
+        # Split into meaningful phrases (sentences / fragments)
+        phrases = [p.strip() for p in content.replace("\n", ". ").split(". ") if len(p.strip()) > 15]
+        if not phrases:
+            continue
+
+        hits = sum(1 for p in phrases if p in draft_lower)
+        score = hits / len(phrases) if phrases else 0
+
+        if score > best_score and score >= 0.3:
+            best_score = score
+            best_id = t.get("id")
+
+    return best_id
 
 @app.route("/debug-env")
 def debug_env():
