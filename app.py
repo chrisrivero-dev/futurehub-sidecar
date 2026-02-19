@@ -424,10 +424,29 @@ def draft():
     }
 
     # ==========================================================
-    # STEP 12: Log to ticket_memory (non-blocking)
+    # STEP 12: Governance gating + memory logging (non-blocking)
     # ==========================================================
     try:
         from services.memory_service import log_ticket_memory
+        from services.governance_service import (
+            should_auto_send,
+            compute_confidence_bucket,
+            compute_risk_category,
+        )
+
+        risk_category = compute_risk_category(safety_mode)
+        confidence_bucket = compute_confidence_bucket(confidence_overall)
+
+        governance_result = should_auto_send(
+            intent=intent,
+            confidence=confidence_overall,
+            risk_level=risk_category,
+            sensitive_flag=False,
+        )
+
+        # auto_sent is False in stub mode (human remains final authority)
+        auto_sent = False
+
         log_ticket_memory({
             "subject": subject,
             "latest_message": latest_message[:500],
@@ -441,7 +460,21 @@ def draft():
             "template_id": strategy_result.get("template_id"),
             "ambiguity": ambiguity_detected,
             "processing_ms": processing_time_ms,
+            "auto_sent": auto_sent,
+            "human_edited": False,
+            "edit_diff_length": 0,
+            "customer_followup": False,
+            "ticket_reopened": False,
+            "risk_category": risk_category,
+            "confidence_bucket": confidence_bucket,
         })
+
+        response["governance"] = {
+            "auto_send_allowed": governance_result["auto_send_allowed"],
+            "reason": governance_result["reason"],
+            "risk_category": risk_category,
+            "confidence_bucket": confidence_bucket,
+        }
     except Exception:
         pass  # non-blocking — never fail the draft response
 

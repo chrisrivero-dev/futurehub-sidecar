@@ -128,3 +128,122 @@ def aggregate_weekly_stats(days=7):
         "top_intents": top_intents,
         "risk_distribution": risk_distribution,
     }
+
+
+def aggregate_audit_stats(days=7):
+    """
+    Phase 3 — Audit & governance metrics from JSONL memory.
+
+    Returns:
+        {
+            "total_tickets": int,
+            "automation_rate": float,
+            "override_rate": float,
+            "followup_rate": float,
+            "reopen_rate": float,
+            "confidence_distribution": {"high": float, "medium": float, "low": float},
+            "risk_distribution": {"low": float, "medium": float, "high": float},
+            "top_problematic_intents": [{"intent": str, "followup_rate": float, "override_rate": float}, ...],
+        }
+    """
+    rows = _read_events(days=days)
+    total = len(rows)
+
+    empty = {
+        "total_tickets": 0,
+        "automation_rate": 0.0,
+        "override_rate": 0.0,
+        "followup_rate": 0.0,
+        "reopen_rate": 0.0,
+        "confidence_distribution": {"high": 0.0, "medium": 0.0, "low": 0.0},
+        "risk_distribution": {"low": 0.0, "medium": 0.0, "high": 0.0},
+        "top_problematic_intents": [],
+    }
+
+    if total == 0:
+        return empty
+
+    # --- Automation rate ---
+    auto_sent = sum(1 for r in rows if r.get("auto_sent") or r.get("auto_send"))
+    automation_rate = round(auto_sent / total, 2)
+
+    # --- Override rate (human_edited / total) ---
+    human_edited = sum(1 for r in rows if r.get("human_edited"))
+    override_rate = round(human_edited / total, 2)
+
+    # --- Follow-up rate (customer_followup / total) ---
+    followup_count = sum(1 for r in rows if r.get("customer_followup"))
+    followup_rate = round(followup_count / total, 2)
+
+    # --- Reopen rate ---
+    reopen_count = sum(1 for r in rows if r.get("ticket_reopened"))
+    reopen_rate = round(reopen_count / total, 2)
+
+    # --- Confidence distribution ---
+    conf_counts = {"high": 0, "medium": 0, "low": 0}
+    for r in rows:
+        bucket = (r.get("confidence_bucket") or "low").lower()
+        if bucket in conf_counts:
+            conf_counts[bucket] += 1
+        else:
+            conf_counts["low"] += 1
+    confidence_distribution = {
+        k: round(v / total, 2) for k, v in conf_counts.items()
+    }
+
+    # --- Risk distribution ---
+    risk_counts = {"low": 0, "medium": 0, "high": 0}
+    for r in rows:
+        cat = (r.get("risk_category") or "medium").lower()
+        if cat in risk_counts:
+            risk_counts[cat] += 1
+        else:
+            risk_counts["medium"] += 1
+    risk_distribution = {
+        k: round(v / total, 2) for k, v in risk_counts.items()
+    }
+
+    # --- Top problematic intents ---
+    # Group by intent, compute per-intent followup_rate and override_rate
+    intent_stats = {}
+    for r in rows:
+        intent = r.get("primary_intent")
+        if not intent:
+            continue
+        if intent not in intent_stats:
+            intent_stats[intent] = {"total": 0, "followup": 0, "edited": 0}
+        intent_stats[intent]["total"] += 1
+        if r.get("customer_followup"):
+            intent_stats[intent]["followup"] += 1
+        if r.get("human_edited"):
+            intent_stats[intent]["edited"] += 1
+
+    problematic = []
+    for intent, s in intent_stats.items():
+        if s["total"] == 0:
+            continue
+        fu_rate = round(s["followup"] / s["total"], 2)
+        ov_rate = round(s["edited"] / s["total"], 2)
+        if fu_rate >= 0.20 or ov_rate >= 0.20:
+            problematic.append({
+                "intent": intent,
+                "count": s["total"],
+                "followup_rate": fu_rate,
+                "override_rate": ov_rate,
+            })
+
+    problematic.sort(
+        key=lambda x: x["followup_rate"] + x["override_rate"],
+        reverse=True,
+    )
+
+    return {
+        "total_tickets": total,
+        "automation_rate": automation_rate,
+        "override_rate": override_rate,
+        "followup_rate": followup_rate,
+        "reopen_rate": reopen_rate,
+        "confidence_distribution": confidence_distribution,
+        "risk_distribution": risk_distribution,
+        "top_problematic_intents": problematic[:10],
+    }

@@ -7,7 +7,7 @@ Phase 2: Historical aggregation only.
 from flask import Blueprint, jsonify
 from datetime import datetime
 
-from services.analytics_service import aggregate_weekly_stats
+from services.analytics_service import aggregate_weekly_stats, aggregate_audit_stats
 
 analytics_bp = Blueprint("analytics", __name__, url_prefix="/api/v1/analytics")
 
@@ -20,6 +20,23 @@ def weekly_analytics():
     Always returns 200 — zeroed structure if no data.
     """
     stats = aggregate_weekly_stats(days=7)
+
+    return jsonify({
+        "success": True,
+        "period": "last_7_days",
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        **stats,
+    }), 200
+
+
+@analytics_bp.route("/audit", methods=["GET"])
+def audit_analytics():
+    """
+    GET /api/v1/analytics/audit
+    Phase 3 — Governance audit metrics for the last 7 days.
+    Always returns 200 — zeroed structure if no data.
+    """
+    stats = aggregate_audit_stats(days=7)
 
     return jsonify({
         "success": True,

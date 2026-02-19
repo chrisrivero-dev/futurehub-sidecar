@@ -39,6 +39,14 @@ def log_ticket_memory(row: dict) -> None:
             "template_id": row.get("template_id"),
             "ambiguity": bool(row.get("ambiguity")),
             "processing_ms": row.get("processing_ms", 0),
+            # Phase 3 — Governance fields (additive)
+            "auto_sent": bool(row.get("auto_sent", False)),
+            "human_edited": bool(row.get("human_edited", False)),
+            "edit_diff_length": int(row.get("edit_diff_length", 0)),
+            "customer_followup": bool(row.get("customer_followup", False)),
+            "ticket_reopened": bool(row.get("ticket_reopened", False)),
+            "risk_category": row.get("risk_category", "medium"),
+            "confidence_bucket": row.get("confidence_bucket", "low"),
         }
         with open(JSONL_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
