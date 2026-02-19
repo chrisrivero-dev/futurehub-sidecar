@@ -101,7 +101,7 @@ They may exchange intelligence signals — but they must never duplicate respons
 
 ### Sidecar answers:
 
-> “What happened inside support?”
+“What happened inside support?”
 
 ### Sidecar does NOT:
 
@@ -111,7 +111,7 @@ They may exchange intelligence signals — but they must never duplicate respons
 - Modify knowledge autonomously
 - Perform strategic forecasting
 
-Sidecar is **execution-layer intelligence**.
+Sidecar is execution-layer intelligence.
 
 ---
 
@@ -144,7 +144,7 @@ Sidecar is **execution-layer intelligence**.
 
 ### FutureHause answers:
 
-> “What is happening outside support — and what should we prepare for?”
+“What is happening outside support — and what should we prepare for?”
 
 ### FutureHause does NOT:
 
@@ -161,3 +161,39 @@ Sidecar executes.
 
 ## 🔁 Approved Interaction Flow
 
+Tickets → Sidecar → JSONL Memory Log → Weekly Summary  
+                               ↓  
+                        (Optional Feed)  
+                               ↓  
+                       FutureHause Analysis  
+                               ↓  
+                  KB Proposal / Strategy Suggestion  
+                               ↓  
+                        Human Approval  
+                               ↓  
+                     KB Update / Prompt Update  
+                               ↓  
+                          Sidecar Uses  
+
+---
+
+## 🚫 Explicit Non-Overlap Rules
+
+- Sidecar never scrapes external sources.
+- FutureHause never injects drafts into live tickets.
+- No autonomous KB mutation.
+- No cross-system silent state mutation.
+- All changes must be human-reviewed.
+
+---
+
+## 🧩 Long-Term Role Clarity
+
+Sidecar = Operational Brain  
+FutureHause = Strategic Brain  
+
+Execution and strategy remain decoupled.
+
+---
+
+This document exists to prevent architectural drift.
