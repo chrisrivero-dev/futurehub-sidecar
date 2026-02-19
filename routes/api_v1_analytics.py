@@ -7,8 +7,7 @@ Phase 2: Historical aggregation only.
 from flask import Blueprint, jsonify
 from datetime import datetime
 
-from services.memory_service import get_weekly_ticket_rows
-from services.analysis_service import aggregate_weekly_stats
+from services.analytics_service import aggregate_weekly_stats
 
 analytics_bp = Blueprint("analytics", __name__, url_prefix="/api/v1/analytics")
 
@@ -20,8 +19,7 @@ def weekly_analytics():
     Returns aggregated analytics for the last 7 days.
     Always returns 200 — zeroed structure if no data.
     """
-    rows = get_weekly_ticket_rows(days=7)
-    stats = aggregate_weekly_stats(rows)
+    stats = aggregate_weekly_stats(days=7)
 
     return jsonify({
         "success": True,
