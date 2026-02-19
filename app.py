@@ -21,6 +21,7 @@ from ai.template_bridge import scanAndVerifyVariables, bridgeMetadataToTemplate,
 
 from routes.sidecar_ui import sidecar_ui_bp
 from routes.insights import insights_bp
+from routes.api_v1_analytics import analytics_bp
 from utils.build import build_id
 
 
@@ -35,6 +36,7 @@ app = Flask(__name__)
 # Register blueprints ONCE
 app.register_blueprint(sidecar_ui_bp)
 app.register_blueprint(insights_bp)
+app.register_blueprint(analytics_bp)
 
 logger = logging.getLogger(__name__)
 
@@ -420,6 +422,28 @@ def draft():
             "tags": tags,
         },
     }
+
+    # ==========================================================
+    # STEP 12: Log to ticket_memory (non-blocking)
+    # ==========================================================
+    try:
+        from services.memory_service import log_ticket_memory
+        log_ticket_memory({
+            "subject": subject,
+            "latest_message": latest_message[:500],
+            "primary_intent": intent,
+            "confidence": confidence_overall,
+            "safety_mode": safety_mode,
+            "strategy": strategy_result.get("strategy"),
+            "auto_send": auto_send_result.get("auto_send", False),
+            "auto_send_reason": auto_send_result.get("auto_send_reason"),
+            "draft_outcome": "follow-up expected" if not auto_send_result.get("auto_send") else "resolved",
+            "template_id": strategy_result.get("template_id"),
+            "ambiguity": ambiguity_detected,
+            "processing_ms": processing_time_ms,
+        })
+    except Exception:
+        pass  # non-blocking — never fail the draft response
 
     return jsonify(response), 200
 
