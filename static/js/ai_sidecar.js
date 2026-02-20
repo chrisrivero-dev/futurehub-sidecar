@@ -249,12 +249,8 @@ class AISidecar {
   // -----------------------------
   processTicket() {
     const subject = document.getElementById('subject')?.value?.trim();
-    const latestMessage = document
-      .getElementById('latest-message')
-      ?.value?.trim();
-    const customerName = document
-      .getElementById('customer-name')
-      ?.value?.trim();
+    const latestMessage = document.getElementById('latest-message')?.value?.trim();
+    const customerName = document.getElementById('customer-name')?.value?.trim();
 
     if (!subject || !latestMessage) {
       this.showToast('Subject and Latest Message are required', 'error');
@@ -279,27 +275,27 @@ class AISidecar {
 
     const text = this.draftTextarea.value || '';
     if (!text.trim()) {
-      this.showToast('No draft to copy', 'warning');
+      this.showToast('No draft to insert', 'warning');
       return;
     }
 
     // Check variable verification
-    if (
-      this._variableVerification &&
-      this._variableVerification.has_required_missing
-    ) {
-      this.showToast('Cannot copy: missing required variables', 'error');
+    if (this._variableVerification && this._variableVerification.has_required_missing) {
+      this.showToast('Cannot insert: missing required variables', 'error');
       return;
     }
 
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.showToast('Draft copied to clipboard');
-      })
-      .catch(() => {
-        this.showToast('Clipboard copy failed', 'error');
-      });
+    // Post message to parent (Freshdesk extension host)
+    window.parent.postMessage(
+      {
+        type: 'INSERT_INTO_CRM',
+        draft: text,
+        strategy: this._currentStrategy,
+      },
+      '*'
+    );
+
+    this.showToast('Draft inserted into CRM');
   }
 
   // -----------------------------
@@ -557,8 +553,7 @@ class AISidecar {
     // ----------------------------
     const statusEl = document.getElementById('auto-run-status');
     if (statusEl) {
-      const hasRequiredMissing =
-        data?.variable_verification?.has_required_missing;
+      const hasRequiredMissing = data?.variable_verification?.has_required_missing;
       if (hasRequiredMissing) {
         statusEl.textContent = 'Missing data — review required fields below';
         statusEl.className = 'auto-run-status status-warning';

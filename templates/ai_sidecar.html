@@ -4,17 +4,21 @@
 <!-- v2.0 — Auto-run on ticket detection, Insert into CRM primary action -->
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Sidecar - FutureHub</title>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Sidecar - FutureHub</title>
 
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Roboto+Mono&display=swap"
+    rel="stylesheet">
+
+  <!-- CSS (versioned with build_id) -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}?v={{ build_id }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/layout.css') }}?v={{ build_id }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v={{ build_id }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/ai_sidecar.css') }}?v={{ build_id }}">
-
-  </head>
+</head>
 
   <body>
     <!-- Wrapper supports both modes: .sidecar-embedded or .sidecar-fullpage -->
@@ -84,7 +88,7 @@
   <div class="sidecar-collapsible">
 
     <!-- Input Form (hidden fields, no Generate Draft button) -->
-    <section class="section-card">
+    <section class="section-card primary process-card">
       <h2 class="section-title">Ticket Information</h2>
 
       <form id="draft-request-form">
@@ -127,15 +131,20 @@
         <!-- No primary Generate Draft button — auto-run handles this -->
       </form>
 
+    <!-- Process Actions -->
+    <div class="process-actions">
+    
       <!-- Manual trigger for standalone mode -->
       <button id="process-ticket-btn" type="button" class="btn-primary btn-block">
         Process Ticket
       </button>
-
+    
       <!-- Auto-run status indicator -->
-      <div id="auto-run-status" class="auto-run-status status-idle">
-        Waiting for ticket data...
+      <div id="auto-run-status" class="auto-run-status status-warning">
+        Missing data — review required fields below
       </div>
+    
+    </div>
     </section>
 
     <!-- Empty State -->
@@ -254,56 +263,48 @@
               </div>
             </section>
 
-            <!-- Draft Response -->
-            <section class="section-card">
-              <div class="section-header">
-                <h2 class="section-title">Draft Response</h2>
-              </div>
-
-              <textarea
-                id="draft-text"
-                class="draft-textarea"
-                rows="8"
-              ></textarea>
-
-              <!-- Missing Variables (shown only when variables are missing) -->
-              <div id="missing-variables-container" class="missing-variables-container hidden">
-                <div class="missing-variables-header">
-                  <svg class="icon icon-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                  </svg>
-                  <span>Missing Variables</span>
-                </div>
-                <div id="missing-variable-chips" class="missing-variable-chips"></div>
-              </div>
-
-              <!-- Primary Action: Insert into CRM -->
-              <button
-                id="insert-crm-btn"
-                class="btn-primary btn-block btn-insert-crm"
-                disabled
-              >
-                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-                Insert into CRM
-              </button>
-
-              <!-- Secondary Action: Regenerate -->
-              <button
-                id="regenerate-btn"
-                class="btn-secondary btn-block btn-sm btn-regenerate"
-                type="button"
-              >
-                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Regenerate
-              </button>
-            </section>
+                      <!-- Draft Response -->
+                      <section class="section-card draft-card">
+                        <div class="section-header">
+                          <h2 class="section-title">Draft Response</h2>
+                        </div>
+                      
+                        <div class="draft-body">
+                          <textarea id="draft-text" class="draft-textarea" rows="8"></textarea>
+                      
+                          <!-- Missing Variables (shown only when variables are missing) -->
+                          <div id="missing-variables-container" class="missing-variables-container hidden">
+                            <div class="missing-variables-header">
+                              <svg class="icon icon-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                              </svg>
+                              <span>Missing Variables</span>
+                            </div>
+                            <div id="missing-variable-chips" class="missing-variable-chips"></div>
+                          </div>
+                      
+                          <!-- Button Stack -->
+                          <div class="draft-actions">
+                            <!-- Primary Action: Insert into CRM -->
+                            <button id="insert-crm-btn" class="btn-primary btn-block btn-insert-crm" disabled>
+                              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                              </svg>
+                              Insert into CRM
+                            </button>
+                      
+                            <!-- Secondary Action: Regenerate -->
+                            <button id="regenerate-btn" class="btn-secondary btn-block btn-sm btn-regenerate" type="button">
+                              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              Regenerate
+                            </button>
+                          </div>
+                        </div>
+                      </section>
 
            <!-- Follow-up Questions -->
 <section class="section-card" id="followup-section">
@@ -316,7 +317,7 @@
 </section>
 
             <!-- Canned Responses -->
-            <section class="section-card">
+            <section class="section-card canned-card">
               <h3 class="section-title">Canned Responses</h3>
 
               <div class="canned-dropdown">
