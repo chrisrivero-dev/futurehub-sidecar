@@ -1098,7 +1098,7 @@ function updateExecutiveSummary({
 }
 
 const RALPH_WEEKLY_SUMMARY_URL =
-  'http://127.0.0.1:5000/insights/weekly-summary';
+  '/api/v1/analytics/weekly';
 
 let cachedWeeklySummary = null;
 let lastWeeklyFetch = 0;
@@ -1136,42 +1136,45 @@ function renderWeeklySummary(summary) {
   const body = document.getElementById('weekly-summary-body');
   if (!body) return;
 
-  if (!summary) {
-    body.innerHTML = `<p class="muted">Summary unavailable.</p>`;
+  if (!summary || !summary.total_tickets) {
+    body.innerHTML = `<p class="muted">No ticket data for the past 7 days.</p>`;
     return;
   }
 
+  const topIntents = (summary.top_intents || []).slice(0, 3);
+  const risk = summary.risk_distribution || {};
+  const automationPct = Math.round((summary.automation_rate || 0) * 100);
+
   body.innerHTML = `
     <div class="summary-section">
+      <strong>Tickets (7 days)</strong>
+      <p>${summary.total_tickets}</p>
+    </div>
+
+    <div class="summary-section">
+      <strong>Automation Rate</strong>
+      <p>${automationPct}% auto-sent</p>
+    </div>
+
+    <div class="summary-section">
       <strong>Top Intents</strong>
-      <ul>
-        ${summary.top_intents
-          .map((i) => `<li>${i.intent} (${i.event_count})</li>`)
-          .join('')}
-      </ul>
+      ${topIntents.length
+        ? '<ul>' + topIntents.map((i) => `<li>${escapeHtml(i.intent)} (${i.count})</li>`).join('') + '</ul>'
+        : '<p class="muted">None</p>'}
     </div>
 
     <div class="summary-section">
-      <strong>Biggest Increases</strong>
+      <strong>Risk Distribution</strong>
       <ul>
-        ${summary.intent_increases
-          .map((i) => `<li>${i.intent}: +${i.delta}</li>`)
-          .join('')}
+        <li>Low: ${Math.round((risk.low || 0) * 100)}%</li>
+        <li>Medium: ${Math.round((risk.medium || 0) * 100)}%</li>
+        <li>High: ${Math.round((risk.high || 0) * 100)}%</li>
       </ul>
     </div>
 
-    <div class="summary-section">
-      <strong>Missing Approvals</strong>
-      <ul>
-        ${summary.intents_missing_approval
-          .map((i) => `<li>${i.intent}</li>`)
-          .join('')}
-      </ul>
-    </div>
-
-    <p class="muted">
-      Last updated: ${new Date(summary.generated_at).toLocaleDateString()}
-    </p>
+    ${summary.generated_at
+      ? `<p class="muted">Updated: ${new Date(summary.generated_at).toLocaleDateString()}</p>`
+      : ''}
   `;
 }
 

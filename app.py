@@ -21,7 +21,11 @@ from ai.template_bridge import scanAndVerifyVariables, bridgeMetadataToTemplate,
 
 from routes.sidecar_ui import sidecar_ui_bp
 from routes.insights import insights_bp
+from routes.api_v1_analytics import analytics_bp
 from utils.build import build_id
+
+from audit import set_trace_id, get_trace_id
+from audit.events import emit_event
 
 
 # =========================
@@ -35,6 +39,7 @@ app = Flask(__name__)
 # Register blueprints ONCE
 app.register_blueprint(sidecar_ui_bp)
 app.register_blueprint(insights_bp)
+app.register_blueprint(analytics_bp)
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +163,7 @@ def get_confidence_label(confidence: float) -> str:
 @app.route("/api/v1/draft", methods=["POST"])
 def draft():
     start_time = time.perf_counter()
+    trace_id = set_trace_id()
 
     try:
         data = request.get_json() or {}
@@ -173,6 +179,16 @@ def draft():
 
     metadata = data.get("metadata") or {}
     attachments = metadata.get("attachments") or []
+
+    # ── Audit: ticket_ingested ──
+    try:
+        emit_event("ticket_ingested", {
+            "subject": subject[:200],
+            "message_length": len(latest_message),
+            "has_history": bool(conversation_history),
+        })
+    except Exception:
+        pass
 
     # ==========================================================
     # STEP 1: Intent Classification (deterministic, no LLM)
@@ -210,6 +226,17 @@ def draft():
     tags = normalized["tags"]
 
     confidence_overall = classification["confidence"]["intent_confidence"]
+
+    # ── Audit: ai_analyze ──
+    try:
+        emit_event("ai_analyze", {
+            "intent": intent,
+            "confidence": confidence_overall,
+            "ambiguity": classification["confidence"].get("ambiguity_detected", False),
+            "safety_mode": classification.get("safety_mode"),
+        })
+    except Exception:
+        pass
 
     # ==========================================================
     # STEP 3: Missing Information Detection (deterministic, no LLM)
@@ -310,6 +337,18 @@ def draft():
     # Always mark LLM as invoked
     draft_result.setdefault("quality_metrics", {})["llm_invoked"] = True
 
+    # ── Audit: draft_generated ──
+    try:
+        emit_event("draft_generated", {
+            "intent": intent,
+            "draft_type": draft_result.get("type"),
+            "draft_length": len(draft_result.get("response_text", "")),
+            "template_count": len(template_candidates),
+            "last_2_customer_messages": last_customer_messages[-2:],
+        })
+    except Exception:
+        pass
+
     # ==========================================================
     # STEP 7: Detect which template was materially used
     #         (informational only — does NOT gate any logic)
@@ -350,6 +389,17 @@ def draft():
             })
             variable_verification["all_satisfied"] = False
             variable_verification["has_required_missing"] = True
+
+    # ── Audit: delta_validation_result ──
+    try:
+        emit_event("delta_validation_result", {
+            "all_satisfied": variable_verification["all_satisfied"],
+            "missing_count": len(variable_verification["missing"]),
+            "has_required_missing": variable_verification.get("has_required_missing", False),
+            "validation_passed": variable_verification["all_satisfied"],
+        })
+    except Exception:
+        pass
 
     # ==========================================================
     # STEP 10: Auto-Send Evaluation
@@ -420,6 +470,62 @@ def draft():
             "tags": tags,
         },
     }
+
+    # ==========================================================
+    # STEP 12: Governance evaluation + memory logging (non-blocking)
+    # ==========================================================
+    try:
+        from services.memory_service import log_ticket_memory
+        from governance.evaluator import evaluate_send_readiness
+
+        from governance.evaluator import _risk_category
+        risk_level = _risk_category(safety_mode)
+
+        gov = evaluate_send_readiness(
+            intent=intent,
+            confidence=confidence_overall,
+            risk_level=risk_level,
+            safety_mode=safety_mode,
+            sensitive_flag=False,
+            ambiguity_detected=ambiguity_detected,
+            has_required_missing=variable_verification.get("has_required_missing", False),
+            delta_passed=variable_verification["all_satisfied"],
+        )
+
+        # auto_sent is False in stub mode (human remains final authority)
+        auto_sent = False
+
+        log_ticket_memory({
+            "subject": subject,
+            "latest_message": latest_message[:500],
+            "primary_intent": intent,
+            "confidence": confidence_overall,
+            "safety_mode": safety_mode,
+            "strategy": strategy_result.get("strategy"),
+            "auto_send": auto_send_result.get("auto_send", False),
+            "auto_send_reason": auto_send_result.get("auto_send_reason"),
+            "draft_outcome": "follow-up expected" if not auto_send_result.get("auto_send") else "resolved",
+            "template_id": strategy_result.get("template_id"),
+            "ambiguity": ambiguity_detected,
+            "processing_ms": processing_time_ms,
+            "auto_sent": auto_sent,
+            "human_edited": False,
+            "edit_diff_length": 0,
+            "customer_followup": False,
+            "ticket_reopened": False,
+            "risk_category": gov["risk_category"],
+            "confidence_bucket": gov["confidence_bucket"],
+        })
+
+        response["governance"] = {
+            "auto_send_allowed": gov["auto_send_allowed"],
+            "reasons": gov["reasons"],
+            "risk_category": gov["risk_category"],
+            "confidence_bucket": gov["confidence_bucket"],
+        }
+        response["trace_id"] = trace_id
+    except Exception:
+        pass  # non-blocking — never fail the draft response
 
     return jsonify(response), 200
 
