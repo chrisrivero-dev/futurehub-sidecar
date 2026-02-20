@@ -96,7 +96,7 @@
 }
 
 .sidecar-collapsed .sidecar-header {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 2px solid var(--color-border);
 }
 
 /* Mobile responsive */
