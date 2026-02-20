@@ -19,7 +19,13 @@
     box-shadow 0.15s ease,
     transform 0.15s ease;
 }
-
+.section-card .draft-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+  padding-bottom: 28px;
+}
 /* Body content padding (NOT headers) */
 .section-card>*:not(.section-header):not(.section-title) {
   padding: 24px;
@@ -1264,4 +1270,119 @@ textarea:focus-visible {
 
 .hidden {
   display: none !important;
+}
+/* ============================================
+   FIX: Canned Responses Help Text Clipping
+   ============================================ */
+
+.section-card .help-text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+
+  margin-top: 14px;
+  padding: 8px 24px 18px 24px;
+
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.5;
+}
+/* ===============================
+   FIX: Canned Responses Help Text Clipping (FINAL)
+   Put this at the VERY BOTTOM of components.css
+   =============================== */
+
+/* 1) Guarantee the canned card is never clipped */
+.section-card.canned-card {
+  overflow: visible !important;
+  padding-bottom: 0 !important;
+  /* don't rely on padding for this */
+}
+
+/* 2) Give the help text real space BELOW it (this is what stops the guillotine) */
+.section-card.canned-card .help-text {
+  display: block;
+  margin-top: 14px !important;
+  margin-bottom: 18px !important;
+  /* <- critical */
+  padding: 0 24px !important;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* 3) Add breathing room to the containers that actually clip at the bottom */
+.sidecar-collapsible {
+  padding-bottom: 40px !important;
+}
+
+#response-container {
+  padding-bottom: 40px !important;
+}
+
+/* keep sidecar-content if you want, but it wasn’t the limiter */
+.sidecar-content {
+  padding-bottom: 0 !important;
+}
+/* ===============================
+   Draft Response Card Breathing
+   =============================== */
+
+.section-card.draft-card {
+  padding-bottom: 32px;
+}
+/* ===============================
+   Primary Card Button Breathing
+   =============================== */
+
+.section-card .btn-block {
+  margin-top: 16px;
+}
+
+.section-card:last-child {
+  padding-bottom: 28px;
+}
+/* ===============================
+   Process Ticket Card Breathing
+   =============================== */
+
+.section-card.process-card {
+  padding-bottom: 32px;
+}
+/* ============================================
+   Draft Response — breathing room + button stack
+   ============================================ */
+
+.section-card.draft-card {
+  padding: 0;
+}
+
+.section-card.draft-card .draft-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-card.draft-card .draft-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+/* ============================================
+   Process Ticket Card Layout Fix
+   ============================================ */
+
+.section-card.process-card {
+  padding: 0;
+}
+
+.section-card.process-card .process-actions {
+  margin-top: 20px;
+  padding: 0 24px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
