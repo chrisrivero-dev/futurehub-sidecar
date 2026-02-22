@@ -278,6 +278,27 @@
                 <div id="missing-variable-chips" class="missing-variable-chips"></div>
               </div>
 
+              <!-- Phase 3.5 — Edit Reason (shown above Insert) -->
+              <div id="edit-reason-container" class="edit-reason-container" style="margin-bottom:8px;">
+                <label for="edit-reason-code" class="label-xs" style="display:block;margin-bottom:4px;">Edit Reason</label>
+                <select id="edit-reason-code" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid #d1d5db;border-radius:4px;">
+                  <option value="unspecified">— select if edited —</option>
+                  <option value="tone_adjustment">Tone adjustment</option>
+                  <option value="added_context">Added context</option>
+                  <option value="corrected_info">Corrected information</option>
+                  <option value="policy_override">Policy override</option>
+                  <option value="personalization">Personalization</option>
+                  <option value="other">Other</option>
+                </select>
+                <input
+                  type="text"
+                  id="edit-freeform-note"
+                  placeholder="Optional note..."
+                  maxlength="200"
+                  style="margin-top:4px;width:100%;padding:4px 6px;font-size:12px;border:1px solid #d1d5db;border-radius:4px;"
+                />
+              </div>
+
               <!-- Primary Action: Insert into CRM -->
               <button
                 id="insert-crm-btn"
@@ -426,6 +447,7 @@
     </div>
 
     <div id="toast" class="toast hidden"></div>
+    <script defer src="{{ url_for('static', filename='js/draft_edit_tracker.js') }}?v={{ build_id }}"></script>
     <script defer src="{{ url_for('static', filename='js/ai_sidecar.js') }}?v={{ build_id }}"></script>
     </body>
     </html>
