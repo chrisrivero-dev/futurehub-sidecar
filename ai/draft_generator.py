@@ -652,3 +652,25 @@ def generate_draft(
         },
         "canned_response_suggestion": None,
     }
+
+
+# =============================================================
+# POSTGRES PHASE 1 — Integration snippet (COMMENTED OUT)
+# Uncomment to enable DB logging. Safe: failures never block drafts.
+# =============================================================
+# def log_draft_event(subject, intent, mode, llm_used):
+#     """Fire-and-forget DB write. Failures are swallowed."""
+#     try:
+#         from db import SessionLocal, safe_commit
+#         from models import DraftEvent
+#         session = SessionLocal()
+#         event = DraftEvent(
+#             subject=subject[:500],
+#             intent=intent,
+#             mode=mode,
+#             llm_used=bool(llm_used),
+#         )
+#         session.add(event)
+#         safe_commit(session)
+#     except Exception:
+#         pass  # non-blocking
