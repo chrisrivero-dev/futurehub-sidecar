@@ -51,6 +51,7 @@ def enrich_with_knowledge(
     Phase 1.4 placeholder.
     Knowledge injection is disabled for now.
     """
+    return draft_text
 
 # ============================================================
 # ## PHASE 3.1 — Reasoning Style Control (HELPER)
@@ -64,6 +65,7 @@ def apply_reasoning_style(
     Control how much reasoning and explanation is allowed.
     Keeps drafts thoughtful but not verbose or speculative.
     """
+    return draft_text
 
 
 # ============================================================
@@ -217,7 +219,7 @@ def apply_draft_constraints(
         for phrase in forbidden_phrases:
             draft_text = draft_text.replace(phrase, "").strip()
 
-    draft_text = draft_text
+    return draft_text
 
 
 # ============================================================
