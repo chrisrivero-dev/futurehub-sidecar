@@ -43,3 +43,6 @@ static/css/change
 static/css/forces
 static/css/mtime
 
+
+# local backups
+/data/data_backup_temp/
