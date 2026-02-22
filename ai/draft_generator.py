@@ -70,7 +70,56 @@ def has_generic_opener(draft_text: str) -> bool:
         return True
     first_line = draft_text.strip().split("\n", 1)[0].lower()
     return any(opener in first_line for opener in GENERIC_OPENERS)
+def _baseline_draft_for_intent(intent: str | None, subject: str | None) -> str:
+    """
+    Deterministic baseline draft so we never fall back to the generic line
+    when intent is known but LLM output is empty/unavailable.
+    """
+    intent = intent or "unknown_vague"
 
+    if intent == "shipping_status":
+        return (
+            "Here’s an update on shipping.\n\n"
+            "If you can share your order number (or the email used at checkout), "
+            "I can check the latest status and whether tracking has been issued."
+        )
+
+    if intent == "setup_help":
+        return (
+            "Let’s get you into the dashboard.\n\n"
+            "If `apollo.local` doesn’t load, the next step is to find the Apollo’s IP address "
+            "from your router and open that IP in a browser on the same network."
+        )
+
+    if intent == "not_hashing":
+        return (
+            "If the miner isn’t hashing, the first thing to confirm is whether the node is fully synced.\n\n"
+            "Does the dashboard show the node as fully synced, and do you see any error message on the Miner page?"
+        )
+
+    if intent == "sync_delay":
+        return (
+            "Initial sync can take a while.\n\n"
+            "If block height is still increasing, it’s usually working normally. "
+            "What block height do you currently see, and is it moving over time?"
+        )
+
+    if intent == "purchase_inquiry":
+        return (
+            "Absolutely — I can help.\n\n"
+            "What are you looking to order (Apollo miner or Solo Node), and do you prefer "
+            "the fastest shipping option or best value/performance?"
+        )
+
+    # Unknown / fallback
+    subj = (subject or "").strip()
+    if subj:
+        return (
+            f"Thanks for reaching out about: “{subj}”.\n\n"
+            "What outcome are you hoping for so I can point you in the right direction?"
+        )
+
+    return "Could you share a bit more detail on what you’re trying to do so I can help?"
 
 # ============================================================
 # Phase 5B — Draft Wording Polish (SAFE-ONLY)
@@ -83,14 +132,18 @@ def polish_draft_text(
 ) -> str:
     """
     Final wording polish.
-    NO logic changes. NO intent changes.
+    NO logic changes.
+    NO intent changes.
+    Must NEVER crash.
+    Must ALWAYS return a string.
     """
+
     if not isinstance(draft_text, str):
         return ""
 
     text = draft_text.strip()
 
-    # Shipping auto-send: remove interactive language
+    # Shipping auto-send: remove overly interactive phrasing
     if intent == "shipping_status" and mode == "explanatory":
         replacements = {
             "I can help": "Here’s an update",
@@ -98,12 +151,18 @@ def polish_draft_text(
             "Once I have a bit more detail": "Here’s what I can see so far",
             "I’ll be able to point you in the right direction": "I’ll share the latest status below",
         }
+
         for old, new in replacements.items():
             text = text.replace(old, new)
 
-        # remove trailing questions if any slipped in
-        lines = [line for line in text.splitlines() if "?" not in line]
-        text = "\n".join(lines).strip()
+        # Remove trailing standalone questions (only if safe to do so)
+        cleaned_lines = []
+        for line in text.splitlines():
+            if line.strip().endswith("?"):
+                continue
+            cleaned_lines.append(line)
+
+        text = "\n".join(cleaned_lines).strip()
 
     return text
 
@@ -182,7 +241,6 @@ def apply_draft_constraints(
 # PHASE 1.4 — Knowledge Enrichment Hook (HELPER, SAFE)
 # ============================================================
 def enrich_with_knowledge(
-    *,
     draft_text: str,
     intent: Optional[str],
     mode: str,
@@ -194,9 +252,8 @@ def enrich_with_knowledge(
     """
     if not isinstance(draft_text, str):
         return ""
+
     return draft_text
-
-
 # ============================================================
 # PHASE 3.1 — Reasoning Style Control (HELPER, SAFE)
 # ============================================================
@@ -208,12 +265,27 @@ def apply_reasoning_style(
 ) -> str:
     """
     Keeps drafts thoughtful but not verbose/speculative.
-    Currently a no-op to preserve behavior.
+    Must NEVER crash.
+    Must ALWAYS return a string.
     """
+
     if not isinstance(draft_text, str):
         return ""
-    return draft_text
 
+    text = draft_text.strip()
+
+    # Optional light cleanup (non-destructive)
+    if mode == "explanatory":
+        forbidden_phrases = [
+            "I think",
+            "Maybe",
+            "It might be",
+            "Possibly",
+        ]
+        for phrase in forbidden_phrases:
+            text = text.replace(phrase, "").strip()
+
+    return text
 
 # ============================================================
 # PHASE 1.1 LOCKED — do not modify without tests
@@ -292,33 +364,66 @@ def generate_draft(
     print(">>> FINAL MODE:", resolved_mode)
     print(">>> FINAL INTENT:", intent)
 
-    # =================================================
-    # LLM FIRST PASS — SOURCE OF TRUTH
-    # =================================================
-    llm_text = generate_llm_response(
-        system_prompt=(
-            "You are a calm, professional customer support agent.\n"
-            "Answer the customer's message as helpfully and completely as possible.\n\n"
-            "If you need more information to proceed, ask ONE clear follow-up question.\n"
-            "If you do NOT need more information, provide a complete answer."
-        ),
-        user_message=latest_message,
-    )
 
-    # Normalize LLM output to string
-    if isinstance(llm_text, dict):
-        llm_text = llm_text.get("text") or llm_text.get("response") or ""
-    elif not isinstance(llm_text, str):
+    # -------------------------------------------------
+    # BASELINE DRAFT (prevents empty output)
+    # -------------------------------------------------
+    draft_text = _baseline_draft_for_intent(intent, subject)
+
+    # -------------------------------------------------
+    # LLM FIRST PASS — SOURCE OF TRUTH (SAFE WRAP)
+    # -------------------------------------------------
+    llm_text = ""
+    try:
+        llm_out = generate_llm_response(
+            system_prompt=(
+                "You are a calm, professional customer support agent.\n"
+                "Answer the customer's message as helpfully and completely as possible.\n\n"
+                "If you need more information to proceed, ask ONE clear follow-up question.\n"
+                "If you do NOT need more information, provide a complete answer."
+            ),
+            user_message=latest_message,
+        )
+
+        if isinstance(llm_out, dict):
+            llm_text = (llm_out.get("text") or llm_out.get("response") or "").strip()
+        elif isinstance(llm_out, str):
+            llm_text = llm_out.strip()
+
+    except Exception:
+        # LLM failure should NEVER kill draft generation
         llm_text = ""
 
-    draft_text = (llm_text or "").strip()
+    # If LLM returned something meaningful, override baseline
+    if llm_text:
+        draft_text = llm_text
+   
 
     # -------------------------------------------------
     # Safe hooks (must not change behavior / must not crash)
     # -------------------------------------------------
-    draft_text = enrich_with_knowledge(draft_text=draft_text, intent=intent, mode=resolved_mode)
-    draft_text = apply_reasoning_style(draft_text=draft_text, intent=intent, mode=resolved_mode)
-    draft_text = polish_draft_text(draft_text=draft_text, intent=intent, mode=resolved_mode)
+    
+
+    draft_text = enrich_with_knowledge(
+        draft_text=draft_text,
+        intent=intent,
+        mode=resolved_mode,
+    )
+   
+
+    draft_text = apply_reasoning_style(
+        draft_text=draft_text,
+        intent=intent,
+        mode=resolved_mode,
+    )
+    
+
+    draft_text = polish_draft_text(
+        draft_text=draft_text,
+        intent=intent,
+        mode=resolved_mode,
+    )
+   
 
     # -------------------------------------------------
     # Confidence-aware knowledge injection (LOCKED gate)
