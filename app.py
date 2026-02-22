@@ -685,6 +685,15 @@ def debug_env():
         "domain": os.environ.get("FRESHDESK_DOMAIN"),
         "api_key_exists": bool(os.environ.get("FRESHDESK_API_KEY"))
     }
+from db import engine
+from models import Base
+
+Base.metadata.create_all(bind=engine)
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
+
+
