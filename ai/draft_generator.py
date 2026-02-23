@@ -14,6 +14,7 @@ from ai.fallback_router import generate_fallback_response
 from db import get_or_create_ticket
 from models import DraftEvent
 from db import get_or_create_ticket
+import hashlib
 
 
 
@@ -690,6 +691,11 @@ def generate_draft(
                     freshdesk_domain=freshdesk_domain,
                 )
 
+            # Compute SHA-256 hash of AI draft
+            draft_hash = hashlib.sha256(
+                draft_text.encode("utf-8")
+            ).hexdigest()
+
             session.add(
                 DraftEvent(
                     ticket_id=ticket.id if ticket else None,
@@ -697,14 +703,14 @@ def generate_draft(
                     intent=intent,
                     mode=mode,
                     llm_used=bool(llm_used),
+                    draft_hash=draft_hash,  # ✅ STORE IT
                 )
             )
 
             safe_commit(session)
 
-        except Exception as e:
-            # Logging must NEVER block draft return
-            print(">>> DraftEvent logging error:", e)
+        except Exception:
+            pass
     # -------------------------------------------------
     # FINAL RETURN — MUST ALWAYS EXECUTE
     # -------------------------------------------------
