@@ -34,6 +34,8 @@ def draft():
         subject = str(data.get("subject") or "").strip()
         latest_message = str(data.get("latest_message") or "").strip()
         customer_name = data.get("customer_name")
+        freshdesk_ticket_id = data.get("freshdesk_ticket_id")
+        freshdesk_domain = data.get("freshdesk_domain")
 
         if not subject or not latest_message:
             return jsonify({
@@ -47,6 +49,8 @@ def draft():
             subject=subject,
             latest_message=latest_message,
             customer_name=customer_name,
+            freshdesk_ticket_id=freshdesk_ticket_id,
+            freshdesk_domain=freshdesk_domain,
         )
 
         return jsonify({
