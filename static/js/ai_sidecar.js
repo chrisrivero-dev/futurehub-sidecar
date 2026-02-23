@@ -285,6 +285,14 @@ class AISidecar {
       return;
     }
 
+    // Phase 3.5 — Capture edit diff before sending (non-blocking)
+    if (typeof window.DraftEditTracker !== 'undefined') {
+      try {
+        var editMeta = this._collectEditReason();
+        window.DraftEditTracker.processSendAction(text, editMeta);
+      } catch (_e) { /* never delay Send */ }
+    }
+
     // Post message to parent (Freshdesk extension host)
     window.parent.postMessage(
       {
@@ -639,6 +647,28 @@ class AISidecar {
     // 9. Conversation Context
     this.renderConversationContext();
 
+    // 10. Phase 3.5 — Store ephemeral draft + emit draft_presented
+    if (typeof window.DraftEditTracker !== 'undefined' && data?.draft?.response_text) {
+      try {
+        var draftId = window.DraftEditTracker.storeDraft({
+          trace_id: data.trace_id || null,
+          draft_text: data.draft.response_text,
+        });
+        this._currentDraftId = draftId;
+        this._currentTraceId = data.trace_id || null;
+
+        window.DraftEditTracker.emitDraftPresented({
+          trace_id: data.trace_id || null,
+          ticket_id: data.ticket_id || null,
+          intent: data.intent_classification?.primary_intent || null,
+          confidence: data.intent_classification?.confidence?.overall || null,
+          latency_ms: data.processing_time_ms || null,
+          tokens: data.tokens_used || null,
+          cost: data.cost || null,
+        });
+      } catch (_e) { /* non-blocking */ }
+    }
+
     // Scroll to top
     if (this.responseContainer && this.responseContainer.scrollIntoView) {
       this.responseContainer.scrollIntoView({
@@ -960,6 +990,16 @@ class AISidecar {
 
       list.appendChild(item);
     });
+  }
+
+  // Phase 3.5 — Collect edit reason from the UI selector
+  _collectEditReason() {
+    var reasonSelect = document.getElementById('edit-reason-code');
+    var noteInput = document.getElementById('edit-freeform-note');
+    return {
+      reason_code: reasonSelect ? reasonSelect.value : 'unspecified',
+      freeform_note: noteInput ? noteInput.value.trim() : '',
+    };
   }
 
   renderConversationContext() {
