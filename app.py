@@ -29,7 +29,7 @@ from utils.build import build_id
 from audit import set_trace_id, get_trace_id
 from audit.events import emit_event
 from db import SessionLocal, safe_commit
-
+from flask import Flask, request, jsonify, render_template  # ensure render_template is here
 
 # =========================
 # App Initialization
@@ -44,9 +44,6 @@ from models import Base
 Base.metadata.create_all(bind=engine)
 
 
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
-
 # Register blueprints ONCE
 app.register_blueprint(sidecar_ui_bp)
 app.register_blueprint(insights_bp)
@@ -54,7 +51,13 @@ app.register_blueprint(analytics_bp)
 
 logger = logging.getLogger(__name__)
 
+@app.route("/sidecar/", methods=["GET"])
+def sidecar_page():
+    return render_template("ai_sidecar.html"), 200
 
+@app.route("/", methods=["GET", "HEAD"])
+def railway_root():
+    return render_template("ai_sidecar.html"), 200
 # =========================
 # Build Metadata
 # =========================
@@ -141,9 +144,7 @@ def llm_allowed():
 
 
 
-@app.route("/", methods=["GET", "HEAD"], endpoint="railway_root", provide_automatic_options=False)
-def railway_root():
-    return "OK", 200
+from flask import render_template
 
 
 # Payload limits
@@ -705,8 +706,10 @@ def debug_env():
         "domain": os.environ.get("FRESHDESK_DOMAIN"),
         "api_key_exists": bool(os.environ.get("FRESHDESK_API_KEY"))
     }
+# ---- routes above ----
+
+print("ROUTES REGISTERED:")
+print(app.url_map)
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
-
-
+    app.run(debug=True, use_reloader=False, port=5000)
