@@ -530,3 +530,36 @@
   color: var(--color-text-muted);
   font-style: italic;
 }
+.status-pill {
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+  margin-bottom: 10px;
+}
+
+.status-pill.low {
+  background-color: #e6f4ea;
+  color: #1e7e34;
+}
+
+.status-pill.medium {
+  background-color: #fff4e5;
+  color: #a15c00;
+}
+
+.status-pill.high {
+  background-color: #fdecea;
+  color: #b02a37;
+}
+
+.suggested-move {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.trend-line {
+  margin-top: 6px;
+  color: #888;
+}

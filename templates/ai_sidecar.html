@@ -350,57 +350,34 @@
                 AI-recommended responses.
               </p>
             </section>
-
-            <!-- Executive Summary -->
-<section class="section-card" id="executive-summary">
-  <h2 class="section-title">Executive Summary</h2>
-
-  <ul class="exec-list">
-    <li>
-      <strong>Draft Outcome:</strong>
-      <span id="exec-draft-outcome">—</span>
-    </li>
-
-    <li>
-      <strong>Recommended Action:</strong>
-      <span id="exec-recommended-action">—</span>
-    </li>
-
-    <li>
-      <strong>Auto-Send:</strong>
-      <span id="exec-auto-send-status">—</span>
-    </li>
-
-    <li>
-      <strong>Primary Risk:</strong>
-      <span id="exec-primary-risk">—</span>
-    </li>
-
-    <li>
-      <strong>Notes:</strong>
-      <span id="exec-notes">—</span>
-    </li>
-  </ul>
-
-  <!-- Weekly Executive Summary (collapsible, secondary) -->
-<div class="weekly-summary-wrapper">
-  <button
-    class="weekly-summary-toggle"
-    id="weekly-summary-toggle"
-    type="button"
-    aria-expanded="false"
-  >
-    Weekly Executive Summary
-    <span class="chevron">▾</span>
-  </button>
-
-  <div
-    class="weekly-summary-body hidden"
-    id="weekly-summary-body"
-  >
-    <p class="muted">Loading summary...</p>
-  </div>
-</div>
+    <section class="section-card" id="case-intelligence">
+    
+      <div class="section-header">
+        <h2 class="section-title">Case Intelligence</h2>
+      </div>
+    
+      <div class="section-body">
+    
+        <div id="status-pill" class="status-pill low">
+          LOW Risk | General
+        </div>
+    
+        <div id="smart-summary" class="smart-summary">
+          Loading intelligence...
+        </div>
+    
+        <div class="suggested-move">
+          <strong>Suggested Move:</strong>
+          <span id="suggested-action">—</span>
+        </div>
+    
+        <div class="trend-line">
+          <small id="trend-info">—</small>
+        </div>
+    
+      </div>
+    
+    </section>
 
 <!-- Decision Explanation -->
 <section id="decision-explanation-section" class="sidecar-section hidden">
