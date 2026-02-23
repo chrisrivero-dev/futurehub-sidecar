@@ -1,3 +1,5 @@
+from db import DATABASE_URL
+print(">>> ACTIVE DATABASE_URL:", DATABASE_URL)
 """
 FutureHub AI Sidecar (v1.0)
 POST /api/v1/draft endpoint with intent classification and draft generation
@@ -26,6 +28,7 @@ from utils.build import build_id
 
 from audit import set_trace_id, get_trace_id
 from audit.events import emit_event
+from db import SessionLocal, safe_commit
 
 
 # =========================
@@ -312,13 +315,22 @@ def draft():
         for m in conversation_history
         if isinstance(m, dict) and m.get("role") == "agent"
     ]
-
+    session = SessionLocal()
+    print(">>> GD session passed:", bool(session))
+    print(">>> ROUTE freshdesk_ticket_id:", data.get("freshdesk_ticket_id"))
+    print(">>> ROUTE freshdesk_domain:", data.get("freshdesk_domain"))
     draft_output = generate_draft(
         latest_message=augmented_input,
         intent=intent,
         prior_draft=agent_history[-1] if agent_history else None,
         prior_agent_messages=agent_history,
+        session=session,
+        freshdesk_ticket_id=data.get("freshdesk_ticket_id"),
+        freshdesk_domain=data.get("freshdesk_domain"),
     )
+
+    safe_commit(session)
+    print(">>> COMMIT CALLED")
 
     if isinstance(draft_output, dict):
         draft_result = draft_output
@@ -364,7 +376,7 @@ def draft():
     # ==========================================================
     # STEP 8: Customer Name Injection
     # ==========================================================
-    draft_text = draft_result.get("response_text", "")
+    draft_text = draft_output["response_text"]
 
     customer_name = data.get("customer_name")
     if customer_name and customer_name not in draft_text:

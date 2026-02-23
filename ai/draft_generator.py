@@ -11,6 +11,9 @@ import random
 from ai.faq_index import load_faq_snippets
 from ai.auto_send_evaluator import evaluate_auto_send
 from ai.fallback_router import generate_fallback_response
+from db import get_or_create_ticket
+from models import DraftEvent
+from db import get_or_create_ticket
 
 
 
@@ -233,6 +236,9 @@ def generate_draft(
     prior_agent_messages: List[str] | None = None,
     mode: str | None = None,
     tone_modifier: str | None = None,
+    session=None,
+    freshdesk_ticket_id: str | None = None,
+    freshdesk_domain: str | None = None,
     **kwargs,
 ) -> dict:
     print(">>> generate_draft loaded from:", __file__)
@@ -641,32 +647,69 @@ def generate_draft(
     # -------------------------------------------------
     if not isinstance(draft_text, str) or not draft_text.strip():
         draft_text = "I can help — could you clarify what you're looking for?"
+    ticket = None
+    try:
+        ticket = get_or_create_ticket(
+            session,
+            freshdesk_ticket_id=freshdesk_ticket_id,
+            freshdesk_domain=freshdesk_domain,
+        )
+    except Exception:
+        ticket = None
+        ticket = None
+    try:
+        ticket = get_or_create_ticket(
+            session,
+            freshdesk_ticket_id=freshdesk_ticket_id,
+            freshdesk_domain=freshdesk_domain,
+        )
+    except Exception:
+        ticket = None
+    print(">>> FINAL draft_text repr:", repr(draft_text))
+    print(">>> session inside GD:", bool(session))
+    print(">>> freshdesk_ticket_id inside GD:", freshdesk_ticket_id)
+    print(">>> freshdesk_domain inside GD:", freshdesk_domain)
+  
 
     # -------------------------------------------------
     # PHASE 1.5 — Log DraftEvent (non-blocking)
     # -------------------------------------------------
-    if draft_text.strip():
+    if session and draft_text and draft_text.strip():
         try:
-            from db import SessionLocal, safe_commit
-            from models import DraftEvent
-            session = SessionLocal()
-            session.add(DraftEvent(
-                subject=(subject or "")[:500],
-                intent=intent,
-                mode=mode,
-                llm_used=bool(llm_text),
-            ))
-            safe_commit(session)
-        except Exception:
-            pass  # DB failure must never block draft return
+            ticket = None
 
+            if freshdesk_ticket_id and freshdesk_domain:
+                ticket = get_or_create_ticket(
+                    session,
+                    freshdesk_ticket_id=freshdesk_ticket_id,
+                    freshdesk_domain=freshdesk_domain,
+                )
+
+            session.add(
+                DraftEvent(
+                    ticket_id=ticket.id if ticket else None,
+                    subject=(subject or latest_message or "")[:500],
+                    intent=intent,
+                    mode=mode,
+                    llm_used=bool(llm_used),
+                )
+            )
+
+            safe_commit(session)
+
+        except Exception as e:
+            # Logging must NEVER block draft return
+            print(">>> DraftEvent logging error:", e)
+    # -------------------------------------------------
+    # FINAL RETURN — MUST ALWAYS EXECUTE
+    # -------------------------------------------------
     return {
         "type": "full",
         "response_text": draft_text,
         "quality_metrics": {
             "mode": mode,
             "delta_enforced": True,
-            "fallback_used": bool(failures),
+            "fallback_used": False,
         },
         "canned_response_suggestion": None,
     }
