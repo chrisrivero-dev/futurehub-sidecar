@@ -5,7 +5,7 @@ SQLAlchemy models — Postgres Phase 1.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, DateTime, Text, Integer, ForeignKey
+from sqlalchemy import String, Boolean, DateTime, Text, Integer, ForeignKey, Float
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db import Base
@@ -38,13 +38,17 @@ class DraftEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
-    intent: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    intent: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     mode: Mapped[str | None] = mapped_column(String(50), nullable=True)
     llm_used: Mapped[bool] = mapped_column(Boolean, default=False)
     ticket_id: Mapped[int | None] = mapped_column(ForeignKey("tickets.id"), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    safety_mode: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    risk_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
+        index=True,
     )
 
     def __repr__(self):

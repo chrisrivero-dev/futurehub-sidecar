@@ -27,6 +27,17 @@ def _query_draft_events(days=7):
         return []
 
 
+def _bucket_confidence(value):
+    """Map a confidence float to high/medium/low bucket."""
+    if value is None:
+        return None
+    if value >= 0.80:
+        return "high"
+    if value >= 0.50:
+        return "medium"
+    return "low"
+
+
 def aggregate_weekly_stats(days=7):
     """
     Compute 7-day window stats from live draft_events rows.
@@ -68,12 +79,25 @@ def aggregate_weekly_stats(days=7):
         reverse=True,
     )[:5]
 
+    # risk_distribution from risk_category column
+    risk_counts = {"low": 0, "medium": 0, "high": 0}
+    for r in rows:
+        cat = r.risk_category
+        if cat and cat in risk_counts:
+            risk_counts[cat] += 1
+    risk_total = sum(risk_counts.values())
+    risk_distribution = (
+        {k: round(v / risk_total, 2) for k, v in risk_counts.items()}
+        if risk_total > 0
+        else {"low": 0.0, "medium": 0.0, "high": 0.0}
+    )
+
     return {
         "total_tickets": total,
         "automation_rate": automation_rate,
-        "followup_rate": 0.0,   # not tracked in current schema
+        "followup_rate": 0.0,   # requires post-draft lifecycle events not yet tracked
         "top_intents": top_intents,
-        "risk_distribution": {"low": 0.0, "medium": 0.0, "high": 0.0},  # not tracked in current schema
+        "risk_distribution": risk_distribution,
     }
 
 
@@ -113,13 +137,39 @@ def aggregate_audit_stats(days=7):
     llm_count = sum(1 for r in rows if r.llm_used)
     automation_rate = round(llm_count / total, 2)
 
+    # confidence_distribution from confidence column
+    conf_counts = {"high": 0, "medium": 0, "low": 0}
+    for r in rows:
+        bucket = _bucket_confidence(r.confidence)
+        if bucket:
+            conf_counts[bucket] += 1
+    conf_total = sum(conf_counts.values())
+    confidence_distribution = (
+        {k: round(v / conf_total, 2) for k, v in conf_counts.items()}
+        if conf_total > 0
+        else {"high": 0.0, "medium": 0.0, "low": 0.0}
+    )
+
+    # risk_distribution from risk_category column
+    risk_counts = {"low": 0, "medium": 0, "high": 0}
+    for r in rows:
+        cat = r.risk_category
+        if cat and cat in risk_counts:
+            risk_counts[cat] += 1
+    risk_total = sum(risk_counts.values())
+    risk_distribution = (
+        {k: round(v / risk_total, 2) for k, v in risk_counts.items()}
+        if risk_total > 0
+        else {"low": 0.0, "medium": 0.0, "high": 0.0}
+    )
+
     return {
         "total_tickets": total,
         "automation_rate": automation_rate,
-        "override_rate": 0.0,   # not tracked in current schema
-        "followup_rate": 0.0,   # not tracked in current schema
-        "reopen_rate": 0.0,     # not tracked in current schema
-        "confidence_distribution": {"high": 0.0, "medium": 0.0, "low": 0.0},  # not tracked in current schema
-        "risk_distribution": {"low": 0.0, "medium": 0.0, "high": 0.0},        # not tracked in current schema
-        "top_problematic_intents": [],
+        "override_rate": 0.0,   # requires agent-edit lifecycle events not yet tracked
+        "followup_rate": 0.0,   # requires customer-reply lifecycle events not yet tracked
+        "reopen_rate": 0.0,     # requires ticket-reopen lifecycle events not yet tracked
+        "confidence_distribution": confidence_distribution,
+        "risk_distribution": risk_distribution,
+        "top_problematic_intents": [],  # requires override + followup columns to compute
     }

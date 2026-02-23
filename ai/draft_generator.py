@@ -392,12 +392,21 @@ def generate_draft(
             if freshdesk_ticket_id and freshdesk_domain:
                 ticket = get_or_create_ticket(session, freshdesk_ticket_id, freshdesk_domain)
                 ticket_id = ticket.id
+            clf = kwargs.get("classification") or {}
+            sm = clf.get("safety_mode") if isinstance(clf, dict) else None
+            cf = clf.get("confidence", {}) if isinstance(clf, dict) else {}
+            cv = cf.get("intent_confidence") if isinstance(cf, dict) else None
+            _rmap = {"safe": "low", "review_required": "medium", "unsafe": "high"}
+            rc = _rmap.get((sm or "").lower()) if sm else None
             session.add(DraftEvent(
                 subject=(subject or "")[:500],
                 intent=intent,
                 mode=mode,
                 llm_used=False,
                 ticket_id=ticket_id,
+                confidence=cv,
+                safety_mode=sm,
+                risk_category=rc,
             ))
             safe_commit(session)
         except Exception:
@@ -676,12 +685,21 @@ def generate_draft(
             if freshdesk_ticket_id and freshdesk_domain:
                 ticket = get_or_create_ticket(session, freshdesk_ticket_id, freshdesk_domain)
                 ticket_id = ticket.id
+            clf = kwargs.get("classification") or {}
+            sm = clf.get("safety_mode") if isinstance(clf, dict) else None
+            cf = clf.get("confidence", {}) if isinstance(clf, dict) else {}
+            cv = cf.get("intent_confidence") if isinstance(cf, dict) else None
+            _rmap = {"safe": "low", "review_required": "medium", "unsafe": "high"}
+            rc = _rmap.get((sm or "").lower()) if sm else None
             session.add(DraftEvent(
                 subject=(subject or "")[:500],
                 intent=intent,
                 mode=mode,
                 llm_used=bool(llm_text),
                 ticket_id=ticket_id,
+                confidence=cv,
+                safety_mode=sm,
+                risk_category=rc,
             ))
             safe_commit(session)
         except Exception:
