@@ -496,6 +496,7 @@ def generate_draft(
     # =================================================
     # LLM FIRST PASS — SOURCE OF TRUTH
     # =================================================
+    llm_used = False
 
     llm_text = generate_llm_response(
         system_prompt=(
@@ -506,6 +507,10 @@ def generate_draft(
         ),
         user_message=latest_message,
     )
+
+    if isinstance(llm_text, str) and llm_text.strip():
+        llm_used = True
+
     # --- LLM OUTPUT NORMALIZATION (HARD GUARANTEE STRING) ---
     if isinstance(llm_text, dict):
         llm_text = llm_text.get("text") or llm_text.get("response") or ""
