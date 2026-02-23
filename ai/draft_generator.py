@@ -648,13 +648,20 @@ def generate_draft(
     if draft_text.strip():
         try:
             from db import SessionLocal, safe_commit
-            from models import DraftEvent
+            from models import DraftEvent, get_or_create_ticket
             session = SessionLocal()
+            ticket_id = None
+            freshdesk_ticket_id = kwargs.get("freshdesk_ticket_id")
+            freshdesk_domain = kwargs.get("freshdesk_domain")
+            if freshdesk_ticket_id and freshdesk_domain:
+                ticket = get_or_create_ticket(session, freshdesk_ticket_id, freshdesk_domain)
+                ticket_id = ticket.id
             session.add(DraftEvent(
                 subject=(subject or "")[:500],
                 intent=intent,
                 mode=mode,
                 llm_used=bool(llm_text),
+                ticket_id=ticket_id,
             ))
             safe_commit(session)
         except Exception:
