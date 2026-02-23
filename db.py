@@ -33,12 +33,9 @@ class Base(DeclarativeBase):
 
 
 def init_db():
-    """Create all tables. Safe to call multiple times (IF NOT EXISTS)."""
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("DB tables ensured (DATABASE_URL=%s)", DATABASE_URL[:30] + "...")
-    except Exception as e:
-        logger.error("init_db failed (non-fatal): %s", e)
+    # Import models so SQLAlchemy registers tables
+    import models  # IMPORTANT — ensures table metadata is loaded
+    Base.metadata.create_all(bind=engine)
 
 
 def safe_commit(session):
