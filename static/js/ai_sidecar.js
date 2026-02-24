@@ -100,8 +100,39 @@ class AISidecar {
     this.bindCollapseToggle();
     this.bindResetButton();
     this.loadCannedResponses();
+    this.loadAnalyticsSummary(); // ← ADD THIS
   }
+  // -----------------------------
+  // Analytics Summary
+  // -----------------------------
+  async loadAnalyticsSummary() {
+    try {
+      const res = await fetch("/api/v1/analytics/weekly");
+      const data = await res.json();
 
+      if (!data.success) return;
+
+      const totalEl = document.getElementById("analytics-total");
+      const autoEl = document.getElementById("analytics-auto");
+      const intentEl = document.getElementById("analytics-intent");
+      const riskEl = document.getElementById("analytics-risk");
+
+      if (totalEl) totalEl.innerText = data.total_tickets;
+      if (autoEl) autoEl.innerText = data.automation_rate;
+
+      if (intentEl) {
+        intentEl.innerText = data.top_intents?.[0]?.intent || "—";
+      }
+
+      if (riskEl) {
+        riskEl.innerText = Object.entries(data.risk_distribution)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(" | ");
+      }
+    } catch (err) {
+      console.error("[sidecar] analytics load failed", err);
+    }
+  }
   // -----------------------------
   // Reset Button
   // -----------------------------
@@ -1383,4 +1414,8 @@ document.addEventListener("DOMContentLoaded", () => {
   console.log("[sidecar] JS loaded — v2.0 auto-run mode");
 
   window.aiSidecar = new AISidecar();
+
+  if (window.aiSidecar.loadAnalyticsSummary) {
+    window.aiSidecar.loadAnalyticsSummary();
+  }
 });

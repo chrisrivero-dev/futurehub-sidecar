@@ -563,3 +563,25 @@
   margin-top: 6px;
   color: #888;
 }
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.analytics-item {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  border-radius: 10px;
+}
+
+.analytics-label {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.analytics-value {
+  font-size: 16px;
+  font-weight: 600;
+}
