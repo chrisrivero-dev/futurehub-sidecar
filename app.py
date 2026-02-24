@@ -61,6 +61,17 @@ def sidecar_page():
 @app.route("/", methods=["GET", "HEAD"])
 def railway_root():
     return render_template("ai_sidecar.html"), 200
+@app.route("/debug-draft-count")
+def debug_draft_count():
+    from db import SessionLocal
+    from models import DraftEvent
+
+    session = SessionLocal()
+    try:
+        count = session.query(DraftEvent).count()
+        return {"count": count}
+    finally:
+        session.close()
 # =========================
 # Build Metadata
 # =========================
