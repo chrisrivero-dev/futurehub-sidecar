@@ -711,5 +711,86 @@ def debug_env():
 print("ROUTES REGISTERED:")
 print(app.url_map)
 
+
+# ==========================================================
+# Freshdesk Lifecycle Webhook
+# POST /api/v1/webhooks/freshdesk
+# ==========================================================
+
+@app.route("/api/v1/webhooks/freshdesk", methods=["POST"])
+def freshdesk_webhook():
+    from sqlalchemy.exc import IntegrityError
+    from db import SessionLocal
+    from models import TicketReply, TicketStatusChange
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "missing JSON body"}), 400
+
+    event_type      = data.get("event_type")
+    fd_ticket_id    = data.get("ticket_id")
+    status          = data.get("status")
+    conversation_id = data.get("conversation_id")
+    author_id       = data.get("author_id")
+
+    try:
+        created_at_raw = data.get("created_at")
+        utc_now = (
+            datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+            if created_at_raw
+            else datetime.utcnow()
+        )
+    except (ValueError, AttributeError):
+        utc_now = datetime.utcnow()
+
+    print(">>> WEBHOOK RECEIVED:", event_type)
+
+    session = SessionLocal()
+    try:
+        if event_type == "ticket_closed":
+            session.add(TicketStatusChange(
+                ticket_id=fd_ticket_id,
+                old_status="unknown",
+                new_status="closed",
+                freshdesk_updated_at=utc_now,
+            ))
+
+        elif event_type == "ticket_updated" and status:
+            session.add(TicketStatusChange(
+                ticket_id=fd_ticket_id,
+                old_status="unknown",
+                new_status=status,
+                freshdesk_updated_at=utc_now,
+            ))
+
+        elif event_type == "conversation_created":
+            session.add(TicketReply(
+                ticket_id=fd_ticket_id,
+                draft_event_id=None,
+                direction="inbound",
+                freshdesk_conversation_id=conversation_id,
+                body_hash=None,
+                body_length=None,
+                edited=None,
+            ))
+
+        session.commit()
+        print(">>> EVENT COMMITTED")
+        return jsonify({"success": True, "event_logged": event_type}), 200
+
+    except IntegrityError:
+        session.rollback()
+        print(">>> DUPLICATE EVENT, SKIPPED:", event_type)
+        return jsonify({"success": True, "event_logged": event_type, "duplicate": True}), 200
+
+    except Exception as e:
+        session.rollback()
+        logger.error("Webhook DB failure: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    finally:
+        session.close()
+
+
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False, port=5000)

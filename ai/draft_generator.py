@@ -11,10 +11,6 @@ import random
 from ai.faq_index import load_faq_snippets
 from ai.auto_send_evaluator import evaluate_auto_send
 from ai.fallback_router import generate_fallback_response
-from db import get_or_create_ticket
-from models import DraftEvent
-from db import get_or_create_ticket
-import hashlib
 
 
 
@@ -237,9 +233,6 @@ def generate_draft(
     prior_agent_messages: List[str] | None = None,
     mode: str | None = None,
     tone_modifier: str | None = None,
-    session=None,
-    freshdesk_ticket_id: str | None = None,
-    freshdesk_domain: str | None = None,
     **kwargs,
 ) -> dict:
     print(">>> generate_draft loaded from:", __file__)
@@ -389,6 +382,35 @@ def generate_draft(
     # EARLY EXIT — no customer text
     # ----------------------------
     if not text:
+        try:
+            from db import SessionLocal, safe_commit
+            from models import DraftEvent, get_or_create_ticket
+            session = SessionLocal()
+            ticket_id = None
+            freshdesk_ticket_id = kwargs.get("freshdesk_ticket_id")
+            freshdesk_domain = kwargs.get("freshdesk_domain")
+            if freshdesk_ticket_id and freshdesk_domain:
+                ticket = get_or_create_ticket(session, freshdesk_ticket_id, freshdesk_domain)
+                ticket_id = ticket.id
+            clf = kwargs.get("classification") or {}
+            sm = clf.get("safety_mode") if isinstance(clf, dict) else None
+            cf = clf.get("confidence", {}) if isinstance(clf, dict) else {}
+            cv = cf.get("intent_confidence") if isinstance(cf, dict) else None
+            _rmap = {"safe": "low", "review_required": "medium", "unsafe": "high"}
+            rc = _rmap.get((sm or "").lower()) if sm else None
+            session.add(DraftEvent(
+                subject=(subject or "")[:500],
+                intent=intent,
+                mode=mode,
+                llm_used=False,
+                ticket_id=ticket_id,
+                confidence=cv,
+                safety_mode=sm,
+                risk_category=rc,
+            ))
+            safe_commit(session)
+        except Exception:
+            pass  # DB failure must never block draft return
         return {
             "type": "partial",
             "response_text": "I need more information from the customer before responding.",
@@ -497,7 +519,6 @@ def generate_draft(
     # =================================================
     # LLM FIRST PASS — SOURCE OF TRUTH
     # =================================================
-    llm_used = False
 
     llm_text = generate_llm_response(
         system_prompt=(
@@ -508,10 +529,6 @@ def generate_draft(
         ),
         user_message=latest_message,
     )
-
-    if isinstance(llm_text, str) and llm_text.strip():
-        llm_used = True
-
     # --- LLM OUTPUT NORMALIZATION (HARD GUARANTEE STRING) ---
     if isinstance(llm_text, dict):
         llm_text = llm_text.get("text") or llm_text.get("response") or ""
@@ -653,74 +670,48 @@ def generate_draft(
     # -------------------------------------------------
     if not isinstance(draft_text, str) or not draft_text.strip():
         draft_text = "I can help — could you clarify what you're looking for?"
-    ticket = None
-    try:
-        ticket = get_or_create_ticket(
-            session,
-            freshdesk_ticket_id=freshdesk_ticket_id,
-            freshdesk_domain=freshdesk_domain,
-        )
-    except Exception:
-        ticket = None
-        ticket = None
-    try:
-        ticket = get_or_create_ticket(
-            session,
-            freshdesk_ticket_id=freshdesk_ticket_id,
-            freshdesk_domain=freshdesk_domain,
-        )
-    except Exception:
-        ticket = None
-    print(">>> FINAL draft_text repr:", repr(draft_text))
-    print(">>> session inside GD:", bool(session))
-    print(">>> freshdesk_ticket_id inside GD:", freshdesk_ticket_id)
-    print(">>> freshdesk_domain inside GD:", freshdesk_domain)
-  
 
     # -------------------------------------------------
     # PHASE 1.5 — Log DraftEvent (non-blocking)
     # -------------------------------------------------
-    if session and draft_text and draft_text.strip():
+    if draft_text.strip():
         try:
-            ticket = None
-
+            from db import SessionLocal, safe_commit
+            from models import DraftEvent, get_or_create_ticket
+            session = SessionLocal()
+            ticket_id = None
+            freshdesk_ticket_id = kwargs.get("freshdesk_ticket_id")
+            freshdesk_domain = kwargs.get("freshdesk_domain")
             if freshdesk_ticket_id and freshdesk_domain:
-                ticket = get_or_create_ticket(
-                    session,
-                    freshdesk_ticket_id=freshdesk_ticket_id,
-                    freshdesk_domain=freshdesk_domain,
-                )
-
-            # Compute SHA-256 hash of AI draft
-            draft_hash = hashlib.sha256(
-                draft_text.encode("utf-8")
-            ).hexdigest()
-
-            session.add(
-                DraftEvent(
-                    ticket_id=ticket.id if ticket else None,
-                    subject=(subject or latest_message or "")[:500],
-                    intent=intent,
-                    mode=mode,
-                    llm_used=bool(llm_used),
-                    draft_hash=draft_hash,  # ✅ STORE IT
-                )
-            )
-
+                ticket = get_or_create_ticket(session, freshdesk_ticket_id, freshdesk_domain)
+                ticket_id = ticket.id
+            clf = kwargs.get("classification") or {}
+            sm = clf.get("safety_mode") if isinstance(clf, dict) else None
+            cf = clf.get("confidence", {}) if isinstance(clf, dict) else {}
+            cv = cf.get("intent_confidence") if isinstance(cf, dict) else None
+            _rmap = {"safe": "low", "review_required": "medium", "unsafe": "high"}
+            rc = _rmap.get((sm or "").lower()) if sm else None
+            session.add(DraftEvent(
+                subject=(subject or "")[:500],
+                intent=intent,
+                mode=mode,
+                llm_used=bool(llm_text),
+                ticket_id=ticket_id,
+                confidence=cv,
+                safety_mode=sm,
+                risk_category=rc,
+            ))
             safe_commit(session)
-
         except Exception:
-            pass
-    # -------------------------------------------------
-    # FINAL RETURN — MUST ALWAYS EXECUTE
-    # -------------------------------------------------
+            pass  # DB failure must never block draft return
+
     return {
         "type": "full",
         "response_text": draft_text,
         "quality_metrics": {
             "mode": mode,
             "delta_enforced": True,
-            "fallback_used": False,
+            "fallback_used": bool(failures),
         },
         "canned_response_suggestion": None,
     }
