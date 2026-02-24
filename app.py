@@ -694,7 +694,7 @@ def debug_env():
 
 @app.route("/api/v1/webhooks/freshdesk", methods=["POST"])
 def freshdesk_webhook():
-    import hashlib
+    from sqlalchemy.exc import IntegrityError
     from db import SessionLocal
     from models import TicketReply, TicketStatusChange
 
@@ -725,7 +725,7 @@ def freshdesk_webhook():
         if event_type == "ticket_closed":
             session.add(TicketStatusChange(
                 ticket_id=fd_ticket_id,
-                old_status=None,
+                old_status="unknown",
                 new_status="closed",
                 freshdesk_updated_at=utc_now,
             ))
@@ -733,7 +733,7 @@ def freshdesk_webhook():
         elif event_type == "ticket_updated" and status:
             session.add(TicketStatusChange(
                 ticket_id=fd_ticket_id,
-                old_status=None,
+                old_status="unknown",
                 new_status=status,
                 freshdesk_updated_at=utc_now,
             ))
@@ -752,6 +752,11 @@ def freshdesk_webhook():
         session.commit()
         print(">>> EVENT COMMITTED")
         return jsonify({"success": True, "event_logged": event_type}), 200
+
+    except IntegrityError:
+        session.rollback()
+        print(">>> DUPLICATE EVENT, SKIPPED:", event_type)
+        return jsonify({"success": True, "event_logged": event_type, "duplicate": True}), 200
 
     except Exception as e:
         session.rollback()
