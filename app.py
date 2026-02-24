@@ -30,6 +30,7 @@ from audit import set_trace_id, get_trace_id
 from audit.events import emit_event
 from db import SessionLocal, safe_commit
 from flask import Flask, request, jsonify, render_template  # ensure render_template is here
+from routes.webhooks import webhooks_bp
 
 # =========================
 # App Initialization
@@ -48,6 +49,8 @@ Base.metadata.create_all(bind=engine)
 app.register_blueprint(sidecar_ui_bp)
 app.register_blueprint(insights_bp)
 app.register_blueprint(analytics_bp)
+app.register_blueprint(webhooks_bp)
+
 
 logger = logging.getLogger(__name__)
 
