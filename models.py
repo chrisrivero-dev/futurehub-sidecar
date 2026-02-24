@@ -5,7 +5,7 @@ SQLAlchemy models — Postgres Phase 1.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, DateTime, Text, Integer, ForeignKey, Float
+from sqlalchemy import String, Boolean, DateTime, Text, Integer, BigInteger, ForeignKey, Float
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db import Base
@@ -45,6 +45,7 @@ class DraftEvent(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     safety_mode: Mapped[str | None] = mapped_column(String(50), nullable=True)
     risk_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    draft_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -56,6 +57,41 @@ class DraftEvent(Base):
             f"<DraftEvent id={self.id} intent={self.intent!r} "
             f"mode={self.mode!r} llm_used={self.llm_used}>"
         )
+
+
+class TicketReply(Base):
+    """Outbound agent replies and inbound customer replies received via Freshdesk webhook."""
+    __tablename__ = "ticket_replies"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
+    draft_event_id: Mapped[int | None] = mapped_column(ForeignKey("draft_events.id"), nullable=True)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)  # 'outbound' | 'inbound'
+    freshdesk_conversation_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    body_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    body_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    edited: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+
+class TicketStatusChange(Base):
+    """Ticket status transitions received via Freshdesk webhook."""
+    __tablename__ = "ticket_status_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
+    old_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    freshdesk_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
 
 
 class Reply:
