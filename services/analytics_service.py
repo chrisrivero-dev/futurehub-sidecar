@@ -117,9 +117,6 @@ def aggregate_audit_stats(days=7):
             "top_problematic_intents": [...],
         }
     """
-    rows = _query_draft_events(days=days)
-    total = len(rows)
-
     empty = {
         "total_tickets": 0,
         "automation_rate": 0.0,
@@ -131,45 +128,110 @@ def aggregate_audit_stats(days=7):
         "top_problematic_intents": [],
     }
 
-    if total == 0:
+    try:
+        from db import SessionLocal
+        from models import DraftEvent, TicketReply, TicketStatusChange
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        session = SessionLocal()
+        try:
+            rows = session.query(DraftEvent).filter(DraftEvent.created_at >= cutoff).all()
+            total = len(rows)
+
+            if total == 0:
+                return empty
+
+            # automation_rate
+            llm_count = sum(1 for r in rows if r.llm_used)
+            automation_rate = round(llm_count / total, 2)
+
+            # confidence_distribution
+            conf_counts = {"high": 0, "medium": 0, "low": 0}
+            for r in rows:
+                bucket = _bucket_confidence(r.confidence)
+                if bucket:
+                    conf_counts[bucket] += 1
+            conf_total = sum(conf_counts.values())
+            confidence_distribution = (
+                {k: round(v / conf_total, 2) for k, v in conf_counts.items()}
+                if conf_total > 0
+                else {"high": 0.0, "medium": 0.0, "low": 0.0}
+            )
+
+            # risk_distribution
+            risk_counts = {"low": 0, "medium": 0, "high": 0}
+            for r in rows:
+                cat = r.risk_category
+                if cat and cat in risk_counts:
+                    risk_counts[cat] += 1
+            risk_total = sum(risk_counts.values())
+            risk_distribution = (
+                {k: round(v / risk_total, 2) for k, v in risk_counts.items()}
+                if risk_total > 0
+                else {"low": 0.0, "medium": 0.0, "high": 0.0}
+            )
+
+            # override_rate: outbound replies where edited=True / total outbound replies
+            outbound_replies = (
+                session.query(TicketReply)
+                .filter(
+                    TicketReply.direction == "outbound",
+                    TicketReply.created_at >= cutoff,
+                )
+                .all()
+            )
+            total_outbound = len(outbound_replies)
+            edited_count = sum(1 for r in outbound_replies if r.edited is True)
+            override_rate = round(edited_count / total_outbound, 2) if total_outbound > 0 else 0.0
+
+            # followup_rate: DraftEvents in window that have >= 1 inbound TicketReply
+            # created after the draft's created_at, using ticket_id linkage
+            draft_ticket_ids = {r.ticket_id: r.created_at for r in rows if r.ticket_id is not None}
+            followup_count = 0
+            if draft_ticket_ids:
+                inbound_replies = (
+                    session.query(TicketReply)
+                    .filter(
+                        TicketReply.direction == "inbound",
+                        TicketReply.ticket_id.in_(list(draft_ticket_ids.keys())),
+                        TicketReply.created_at >= cutoff,
+                    )
+                    .all()
+                )
+                tickets_with_followup = {
+                    r.ticket_id
+                    for r in inbound_replies
+                    if r.created_at > draft_ticket_ids.get(r.ticket_id, r.created_at)
+                }
+                followup_count = len(tickets_with_followup)
+            followup_rate = round(followup_count / total, 2)
+
+            # reopen_rate: status changes where old in (resolved/closed) and new == open
+            status_changes = (
+                session.query(TicketStatusChange)
+                .filter(TicketStatusChange.created_at >= cutoff)
+                .all()
+            )
+            total_changes = len(status_changes)
+            reopen_count = sum(
+                1 for s in status_changes
+                if s.old_status in ("resolved", "closed") and s.new_status == "open"
+            )
+            reopen_rate = round(reopen_count / total_changes, 2) if total_changes > 0 else 0.0
+
+        finally:
+            session.close()
+
+    except Exception:
         return empty
-
-    llm_count = sum(1 for r in rows if r.llm_used)
-    automation_rate = round(llm_count / total, 2)
-
-    # confidence_distribution from confidence column
-    conf_counts = {"high": 0, "medium": 0, "low": 0}
-    for r in rows:
-        bucket = _bucket_confidence(r.confidence)
-        if bucket:
-            conf_counts[bucket] += 1
-    conf_total = sum(conf_counts.values())
-    confidence_distribution = (
-        {k: round(v / conf_total, 2) for k, v in conf_counts.items()}
-        if conf_total > 0
-        else {"high": 0.0, "medium": 0.0, "low": 0.0}
-    )
-
-    # risk_distribution from risk_category column
-    risk_counts = {"low": 0, "medium": 0, "high": 0}
-    for r in rows:
-        cat = r.risk_category
-        if cat and cat in risk_counts:
-            risk_counts[cat] += 1
-    risk_total = sum(risk_counts.values())
-    risk_distribution = (
-        {k: round(v / risk_total, 2) for k, v in risk_counts.items()}
-        if risk_total > 0
-        else {"low": 0.0, "medium": 0.0, "high": 0.0}
-    )
 
     return {
         "total_tickets": total,
         "automation_rate": automation_rate,
-        "override_rate": 0.0,   # requires agent-edit lifecycle events not yet tracked
-        "followup_rate": 0.0,   # requires customer-reply lifecycle events not yet tracked
-        "reopen_rate": 0.0,     # requires ticket-reopen lifecycle events not yet tracked
+        "override_rate": override_rate,
+        "followup_rate": followup_rate,
+        "reopen_rate": reopen_rate,
         "confidence_distribution": confidence_distribution,
         "risk_distribution": risk_distribution,
-        "top_problematic_intents": [],  # requires override + followup columns to compute
+        "top_problematic_intents": [],
     }
