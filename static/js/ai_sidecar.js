@@ -24,20 +24,22 @@ window.addEventListener('message', (event) => {
     customerName.value = ticket.customer_name;
   }
 
- // Store ticket id for review mode
-if (window.aiSidecar) {
-  window.aiSidecar._currentTicketId = ticket.id || null;
-  if (typeof window.aiSidecar._showReviewButton === "function") {
-    window.aiSidecar._showReviewButton();
+  // Store ticket id for review mode
+  if (window.aiSidecar) {
+    window.aiSidecar._currentTicketId = ticket.id || null;
+    if (typeof window.aiSidecar._showReviewButton === 'function') {
+      window.aiSidecar._showReviewButton();
+    }
   }
-}
 
-// Auto-run draft pipeline once per unique ticket
-const ticketKey = `${ticket.id || ''}_${ticket.subject || ''}`;
-if (window.aiSidecar && ticketKey !== _lastAutoRunTicketKey) {
-  _lastAutoRunTicketKey = ticketKey;
-  window.aiSidecar.autoRunDraft();
-}
+  // Auto-run draft pipeline once per unique ticket
+  const ticketKey = `${ticket.id || ''}_${ticket.subject || ''}`;
+  if (window.aiSidecar && ticketKey !== _lastAutoRunTicketKey) {
+    _lastAutoRunTicketKey = ticketKey;
+    window.aiSidecar.autoRunDraft();
+  }
+}); // ✅ CLOSES window.addEventListener('message', ...)
+
 // -----------------------------------------------------------
 // Helper text inserted by Suggested Actions
 // -----------------------------------------------------------
@@ -1545,4 +1547,4 @@ AISidecar.prototype._renderReviewContent = function (data) {
       this._exitReviewMode();
     });
   }
-}; // <--- THIS CLOSES THE FUNCTION
+};
