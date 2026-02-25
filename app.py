@@ -817,27 +817,6 @@ def freshdesk_webhook():
         session.close()
 @app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
 def review_ticket(ticket_id):
-<<<<<<< HEAD
-    try:
-        from models import DraftEvent, TicketReply, TicketStatusChange
-        from db import SessionLocal
-        from sqlalchemy import desc
-
-        session = SessionLocal()
-        try:
-            draft_events = (
-                session.query(DraftEvent)
-                .filter(DraftEvent.ticket_id == ticket_id)
-                .order_by(desc(DraftEvent.created_at))
-                .all()
-            )
-
-            latest_draft = draft_events[0] if draft_events else None
-
-            replies = (
-                session.query(TicketReply)
-                .filter(TicketReply.ticket_id == ticket_id)
-=======
     empty = {
         "success": True,
         "ticket_id": ticket_id,
@@ -886,39 +865,17 @@ def review_ticket(ticket_id):
                 session.query(TicketReply)
                 .filter(TicketReply.ticket_id == local_id)
                 .order_by(TicketReply.created_at.asc())
->>>>>>> claude/remove-draft-button-glI07
                 .all()
             )
 
             status_changes = (
                 session.query(TicketStatusChange)
-<<<<<<< HEAD
-                .filter(TicketStatusChange.ticket_id == ticket_id)
-=======
                 .filter(TicketStatusChange.ticket_id == local_id)
->>>>>>> claude/remove-draft-button-glI07
                 .all()
             )
 
             outbound = [r for r in replies if r.direction == "outbound"]
             inbound = [r for r in replies if r.direction == "inbound"]
-<<<<<<< HEAD
-
-            edited = any(r.edited is True for r in outbound)
-
-            followup_detected = False
-            if latest_draft:
-                followup_detected = any(
-                    r.created_at > latest_draft.created_at for r in inbound
-                )
-
-            reopened = any(
-                s.old_status in ("resolved", "closed")
-                and s.new_status == "open"
-                for s in status_changes
-            )
-
-=======
             edited_count = sum(1 for r in outbound if r.edited is True)
 
             # strategy = DraftEvent.mode (e.g. "template", "llm", "hybrid")
@@ -946,70 +903,32 @@ def review_ticket(ticket_id):
             else:
                 risk_category = "low"
 
->>>>>>> claude/remove-draft-button-glI07
             return {
                 "success": True,
                 "ticket_id": ticket_id,
                 "draft_summary": {
                     "intent": latest_draft.intent if latest_draft else None,
-<<<<<<< HEAD
-                    "confidence": latest_draft.confidence if latest_draft else None,
-                    "risk_category": latest_draft.risk_category if latest_draft else None,
-                    "strategy": latest_draft.strategy if latest_draft else None,
-                    "llm_used": latest_draft.llm_used if latest_draft else False,
-                    "edited": edited,
-=======
                     "confidence": confidence_val,
                     "risk_category": risk_category,
                     "strategy": strategy,
                     "llm_used": latest_draft.llm_used if latest_draft else False,
                     "edited": edited_count > 0,
->>>>>>> claude/remove-draft-button-glI07
                 },
                 "lifecycle": {
                     "outbound_count": len(outbound),
                     "inbound_count": len(inbound),
-<<<<<<< HEAD
-                    "edited_count": sum(1 for r in outbound if r.edited is True),
-                    "followup_detected": followup_detected,
-                    "reopened": reopened,
-                },
-=======
                     "edited_count": edited_count,
                     "followup_detected": followup_detected,
                     "reopened": reopened,
                 },
                 "kb_recommendations": [],
->>>>>>> claude/remove-draft-button-glI07
             }
         finally:
             session.close()
 
     except Exception as e:
-<<<<<<< HEAD
-        return {
-            "success": True,
-            "ticket_id": ticket_id,
-            "draft_summary": {
-                "intent": None,
-                "confidence": None,
-                "risk_category": None,
-                "strategy": None,
-                "llm_used": False,
-                "edited": False,
-            },
-            "lifecycle": {
-                "outbound_count": 0,
-                "inbound_count": 0,
-                "edited_count": 0,
-                "followup_detected": False,
-                "reopened": False,
-            },
-        }
-=======
         logger.error("review_ticket failed: %s", e)
         return empty
->>>>>>> claude/remove-draft-button-glI07
 
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False, port=5000)
