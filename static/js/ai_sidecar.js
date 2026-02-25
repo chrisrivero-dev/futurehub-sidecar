@@ -1489,7 +1489,18 @@ AISidecar.prototype._enterReviewMode = async function () {
     container.innerHTML = 'Failed to load review data.';
   }
 };
+AISidecar.prototype._exitReviewMode = function () {
+  this._inReviewMode = false;
 
+  const collapsible = document.querySelector('.sidecar-collapsible');
+  if (collapsible) collapsible.style.display = 'block';
+
+  const response = document.getElementById('response-container');
+  if (response) response.style.display = 'block';
+
+  const container = document.getElementById('review-mode-container');
+  if (container) container.style.display = 'none';
+};
 AISidecar.prototype._renderReviewContent = function (data) {
   const container = document.getElementById('review-mode-container');
   if (!container) return; // Exit if the container doesn't exist
