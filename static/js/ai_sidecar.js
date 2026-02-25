@@ -111,6 +111,136 @@ class AISidecar {
     this.initReviewMode();
     this.loadAnalyticsSummary(); // ← ADD THIS
   }
+  initReviewMode() {
+    this._currentTicketId = null;
+    this._inReviewMode = false;
+
+    const header = document.querySelector('.header-controls');
+    if (!header) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'review-mode-btn';
+    btn.innerText = 'Review';
+    btn.style.display = 'none';
+    btn.style.marginLeft = '8px';
+    btn.classList.add('secondary-btn');
+
+    btn.addEventListener('click', () => {
+      if (!this._currentTicketId) return;
+      this._enterReviewMode();
+    });
+
+    header.appendChild(btn);
+    this._reviewBtn = btn;
+
+    const container = document.createElement('div');
+    container.id = 'review-mode-container';
+    container.style.display = 'none';
+    this.panel.appendChild(container);
+  }
+
+  _showReviewButton() {
+    if (this._reviewBtn && this._currentTicketId) {
+      this._reviewBtn.style.display = 'inline-block';
+    }
+  }
+
+  async _enterReviewMode() {
+    if (this._inReviewMode) return;
+
+    this._inReviewMode = true;
+
+    document
+      .querySelector('.sidecar-collapsible')
+      ?.style.setProperty('display', 'none');
+    document
+      .getElementById('response-container')
+      ?.style.setProperty('display', 'none');
+
+    const container = document.getElementById('review-mode-container');
+    if (!container) return;
+
+    container.style.display = 'block';
+    container.innerHTML = 'Loading review data...';
+
+    try {
+      const res = await fetch(
+        `/api/v1/tickets/${this._currentTicketId}/review`
+      );
+
+      if (!res.ok) {
+        throw new Error(`Review fetch failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+      this._renderReviewContent(data);
+    } catch (err) {
+      console.error('Review load error:', err);
+      container.innerHTML = 'Failed to load review data.';
+    }
+  }
+  _renderReviewContent(data) {
+    const container = document.getElementById('review-mode-container');
+    if (!container) return;
+
+    const d = data.draft_summary || {};
+    const l = data.lifecycle || {};
+
+    container.innerHTML = `
+    <div class="section-card">
+      <div class="section-header">
+        <h2 class="section-title">Ticket Review</h2>
+      </div>
+      <div class="section-body">
+        <p><strong>Intent:</strong> ${d.intent || '—'}</p>
+        <p><strong>Confidence:</strong> ${d.confidence ?? '—'}</p>
+        <p><strong>Risk:</strong> ${d.risk_category || '—'}</p>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header">
+        <h2 class="section-title">Lifecycle Signals</h2>
+      </div>
+      <div class="section-body">
+        <p><strong>Outbound Replies:</strong> ${l.outbound_count || 0}</p>
+        <p><strong>Inbound Replies:</strong> ${l.inbound_count || 0}</p>
+        <p><strong>Edited:</strong> ${l.edited_count > 0 ? 'Yes' : 'No'}</p>
+        <p><strong>Follow-up:</strong> ${l.followup_detected ? 'Yes' : 'No'}</p>
+        <p><strong>Reopened:</strong> ${l.reopened ? 'Yes' : 'No'}</p>
+        <br/>
+        <button id="review-back-btn" class="secondary-btn">Back to Processing</button>
+      </div>
+    </div>
+  `;
+
+    const backBtn = document.getElementById('review-back-btn');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        this._exitReviewMode();
+      });
+    }
+  }
+
+  _exitReviewMode() {
+    this._inReviewMode = false;
+
+    const collapsible = document.querySelector('.sidecar-collapsible');
+    if (collapsible) {
+      collapsible.style.display = 'block';
+    }
+
+    const response = document.getElementById('response-container');
+    if (response) {
+      response.style.display = 'block';
+    }
+
+    const container = document.getElementById('review-mode-container');
+    if (container) {
+      container.style.display = 'none';
+    }
+  }
+
   // -----------------------------
   // Analytics Summary
   // -----------------------------
@@ -1428,123 +1558,3 @@ document.addEventListener('DOMContentLoaded', () => {
     window.aiSidecar.loadAnalyticsSummary();
   }
 });
-// -------------------------------------
-// Inline Review Mode (Minimal)
-// -------------------------------------
-
-AISidecar.prototype.initReviewMode = function () {
-  this._currentTicketId = null;
-  this._inReviewMode = false;
-
-  const header = document.querySelector('.header-controls');
-  if (!header) return;
-
-  const btn = document.createElement('button');
-  btn.id = 'review-mode-btn';
-  btn.innerText = 'Review';
-  btn.style.display = 'none';
-  btn.style.marginLeft = '8px';
-  btn.classList.add('secondary-btn');
-
-  btn.addEventListener('click', () => {
-    if (!this._currentTicketId) return;
-    this._enterReviewMode();
-  });
-
-  header.appendChild(btn);
-  this._reviewBtn = btn;
-
-  // container
-  const container = document.createElement('div');
-  container.id = 'review-mode-container';
-  container.style.display = 'none';
-  this.panel.appendChild(container);
-};
-
-AISidecar.prototype._showReviewButton = function () {
-  if (this._reviewBtn && this._currentTicketId) {
-    this._reviewBtn.style.display = 'inline-block';
-  }
-};
-
-AISidecar.prototype._enterReviewMode = async function () {
-  if (this._inReviewMode) return;
-
-  this._inReviewMode = true;
-
-  document
-    .querySelector('.sidecar-collapsible')
-    ?.style.setProperty('display', 'none');
-  document
-    .getElementById('response-container')
-    ?.style.setProperty('display', 'none');
-
-  const container = document.getElementById('review-mode-container');
-  container.style.display = 'block';
-  container.innerHTML = 'Loading review data...';
-
-  try {
-    const res = await fetch(`/api/v1/tickets/${this._currentTicketId}/review`);
-    const data = await res.json();
-    this._renderReviewContent(data);
-  } catch (err) {
-    container.innerHTML = 'Failed to load review data.';
-  }
-};
-AISidecar.prototype._exitReviewMode = function () {
-  this._inReviewMode = false;
-
-  const collapsible = document.querySelector('.sidecar-collapsible');
-  if (collapsible) collapsible.style.display = 'block';
-
-  const response = document.getElementById('response-container');
-  if (response) response.style.display = 'block';
-
-  const container = document.getElementById('review-mode-container');
-  if (container) container.style.display = 'none';
-};
-AISidecar.prototype._renderReviewContent = function (data) {
-  const container = document.getElementById('review-mode-container');
-  if (!container) return; // Exit if the container doesn't exist
-
-  // Safely extract data with defaults
-  const d = data.draft_summary || {};
-  const l = data.lifecycle || {};
-
-  // 1. Set the HTML
-  container.innerHTML = `
-    <div class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">Ticket Review</h2>
-      </div>
-      <div class="section-body">
-        <p><strong>Intent:</strong> ${d.intent || '—'}</p>
-        <p><strong>Confidence:</strong> ${d.confidence || '—'}</p>
-        <p><strong>Risk:</strong> ${d.risk_category || '—'}</p>
-      </div>
-    </div>
-
-    <div class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">Lifecycle Signals</h2>
-      </div>
-      <div class="section-body">
-        <p><strong>Outbound Replies:</strong> ${l.outbound_count || 0}</p>
-        <p><strong>Inbound Replies:</strong> ${l.inbound_count || 0}</p>
-        <p><strong>Edited:</strong> ${l.edited_count > 0 ? 'Yes' : 'No'}</p>
-        <p><strong>Follow-up:</strong> ${l.followup_detected ? 'Yes' : 'No'}</p>
-        <p><strong>Reopened:</strong> ${l.reopened ? 'Yes' : 'No'}</p>
-        <br/>
-        <button id="review-back-btn" class="secondary-btn">Back to Processing</button>
-      </div>
-    </div>
-  `; // <--- ENSURE THIS BACKTICK AND SEMICOLON ARE HERE
-
-  // 2. Attach the listener only AFTER the HTML is set
-  const backBtn = document.getElementById('review-back-btn');
-  if (backBtn) {
-    backBtn.addEventListener('click', () => {
-      this._exitReviewMode();
-    });
-  }
-};
