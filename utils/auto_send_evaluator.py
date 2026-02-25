@@ -32,7 +32,11 @@ AUTO_SEND_WHITELIST: Dict[str, Dict[str, Any]] = {
         "allow_partial": False,
     },
 }
-
+# Backward compatibility for legacy tests
+# Uses lowest configured whitelist threshold
+CONFIDENCE_THRESHOLD = min(
+    policy["min_confidence"] for policy in AUTO_SEND_WHITELIST.values()
+)
 
 def evaluate_auto_send_eligibility(
     intent: Optional[str],
