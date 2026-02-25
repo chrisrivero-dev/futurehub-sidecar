@@ -767,5 +767,112 @@ def freshdesk_webhook():
         session.close()
 
 
+
+# ==========================================================
+# Ticket Review Endpoint
+# GET /api/v1/tickets/<ticket_id>/review
+# ==========================================================
+
+@app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
+def ticket_review(ticket_id):
+    from db import SessionLocal
+    from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
+
+    empty = {
+        "success": True,
+        "ticket_id": ticket_id,
+        "draft_summary": {
+            "intent": None,
+            "confidence": None,
+            "risk_category": None,
+            "strategy": None,
+            "llm_used": False,
+            "edited": False,
+        },
+        "lifecycle": {
+            "outbound_count": 0,
+            "inbound_count": 0,
+            "edited_count": 0,
+            "followup_detected": False,
+            "reopened": False,
+        },
+    }
+
+    session = SessionLocal()
+    try:
+        ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
+        if not ticket:
+            return jsonify(empty), 200
+
+        local_id = ticket.id
+
+        drafts = (
+            session.query(DraftEvent)
+            .filter(DraftEvent.ticket_id == local_id)
+            .order_by(DraftEvent.created_at.desc())
+            .all()
+        )
+
+        replies = (
+            session.query(TicketReply)
+            .filter(TicketReply.ticket_id == local_id)
+            .all()
+        )
+
+        status_changes = (
+            session.query(TicketStatusChange)
+            .filter(TicketStatusChange.ticket_id == local_id)
+            .all()
+        )
+
+        # draft_summary — from most recent DraftEvent
+        latest = drafts[0] if drafts else None
+        outbound = [r for r in replies if r.direction == "outbound"]
+        inbound  = [r for r in replies if r.direction == "inbound"]
+        edited_outbound = [r for r in outbound if r.edited is True]
+
+        edited_flag = len(edited_outbound) > 0
+
+        # followup_detected: any inbound reply after latest draft's created_at
+        followup_detected = False
+        if latest and inbound:
+            followup_detected = any(
+                r.created_at > latest.created_at for r in inbound
+            )
+
+        # reopened: any transition from resolved/closed to open
+        reopened = any(
+            s.old_status in ("resolved", "closed") and s.new_status == "open"
+            for s in status_changes
+        )
+
+        return jsonify({
+            "success": True,
+            "ticket_id": ticket_id,
+            "draft_summary": {
+                "intent": latest.intent if latest else None,
+                "confidence": latest.confidence if latest else None,
+                "risk_category": latest.risk_category if latest else None,
+                "strategy": None,
+                "llm_used": latest.llm_used if latest else False,
+                "edited": edited_flag,
+            },
+            "lifecycle": {
+                "outbound_count": len(outbound),
+                "inbound_count": len(inbound),
+                "edited_count": len(edited_outbound),
+                "followup_detected": followup_detected,
+                "reopened": reopened,
+            },
+        }), 200
+
+    except Exception as e:
+        logger.error("Ticket review query failed: %s", e)
+        return jsonify(empty), 200
+
+    finally:
+        session.close()
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

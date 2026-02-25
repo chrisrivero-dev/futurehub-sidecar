@@ -1326,4 +1326,50 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('[sidecar] JS loaded — v2.0 auto-run mode');
 
   window.aiSidecar = new AISidecar();
+
+  // Ticket Review Mode — activate only when ?ticket_id= is present in URL
+  const _ticketIdParam = new URLSearchParams(window.location.search).get('ticket_id');
+  if (_ticketIdParam) {
+    _loadTicketSignals(parseInt(_ticketIdParam, 10));
+  }
 });
+
+// -----------------------------
+// Ticket Signals (Review Mode)
+// -----------------------------
+async function _loadTicketSignals(ticketId) {
+  if (!ticketId) return;
+
+  try {
+    const res = await fetch(`/api/v1/tickets/${ticketId}/review`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success) return;
+    _renderTicketSignals(data);
+  } catch (err) {
+    console.warn('[sidecar] Ticket signals unavailable', err);
+  }
+}
+
+function _renderTicketSignals(data) {
+  const lc = data.lifecycle || {};
+  const anchor = document.querySelector('.weekly-summary-wrapper');
+  if (!anchor) return;
+
+  const block = document.createElement('div');
+  block.id = 'ticket-signals-block';
+  block.style.cssText = 'margin-top:12px;padding:10px 12px;background:var(--bg-secondary,#f6f8fa);border-radius:6px;font-size:13px;';
+
+  block.innerHTML = `
+    <strong style="display:block;margin-bottom:6px;">Ticket Signals</strong>
+    <ul style="list-style:none;margin:0;padding:0;line-height:1.9;">
+      <li><span style="color:var(--text-muted,#888);">Outbound Replies:</span> ${lc.outbound_count ?? 0}</li>
+      <li><span style="color:var(--text-muted,#888);">Inbound Replies:</span> ${lc.inbound_count ?? 0}</li>
+      <li><span style="color:var(--text-muted,#888);">Edited:</span> ${lc.edited_count > 0 ? 'Yes' : 'No'}</li>
+      <li><span style="color:var(--text-muted,#888);">Follow-up:</span> ${lc.followup_detected ? 'Yes' : 'No'}</li>
+      <li><span style="color:var(--text-muted,#888);">Reopened:</span> ${lc.reopened ? 'Yes' : 'No'}</li>
+    </ul>
+  `;
+
+  anchor.insertAdjacentElement('afterend', block);
+}
