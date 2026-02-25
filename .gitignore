@@ -43,7 +43,11 @@ static/css/change
 static/css/forces
 static/css/mtime
 
+<<<<<<< HEAD
 # Runtime generated data (audit + memory)
 data/
 data/
 data/audit/audit_events.jsonl
+=======
+data/
+>>>>>>> 93bcd2f (Ignore runtime data directory)
