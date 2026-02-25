@@ -1542,3 +1542,4 @@ AISidecar.prototype._renderReviewContent = function (data) {
     this._exitReviewMode();
   });
 };
+}
