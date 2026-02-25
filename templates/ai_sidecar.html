@@ -4,17 +4,21 @@
 <!-- v2.0 — Auto-run on ticket detection, Insert into CRM primary action -->
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Sidecar - FutureHub</title>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Sidecar - FutureHub</title>
 
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Roboto+Mono&display=swap"
+    rel="stylesheet">
+
+  <!-- CSS (versioned with build_id) -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}?v={{ build_id }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/layout.css') }}?v={{ build_id }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v={{ build_id }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/ai_sidecar.css') }}?v={{ build_id }}">
-
-  </head>
+</head>
 
   <body>
     <!-- Wrapper supports both modes: .sidecar-embedded or .sidecar-fullpage -->
@@ -84,7 +88,7 @@
   <div class="sidecar-collapsible">
 
     <!-- Input Form (hidden fields, no Generate Draft button) -->
-    <section class="section-card">
+    <section class="section-card primary process-card">
       <h2 class="section-title">Ticket Information</h2>
 
       <form id="draft-request-form">
@@ -127,15 +131,20 @@
         <!-- No primary Generate Draft button — auto-run handles this -->
       </form>
 
+    <!-- Process Actions -->
+    <div class="process-actions">
+    
       <!-- Manual trigger for standalone mode -->
       <button id="process-ticket-btn" type="button" class="btn-primary btn-block">
         Process Ticket
       </button>
-
+    
       <!-- Auto-run status indicator -->
-      <div id="auto-run-status" class="auto-run-status status-idle">
-        Waiting for ticket data...
+      <div id="auto-run-status" class="auto-run-status status-warning">
+        Missing data — review required fields below
       </div>
+    
+    </div>
     </section>
 
     <!-- Empty State -->
@@ -254,77 +263,48 @@
               </div>
             </section>
 
-            <!-- Draft Response -->
-            <section class="section-card">
-              <div class="section-header">
-                <h2 class="section-title">Draft Response</h2>
-              </div>
-
-              <textarea
-                id="draft-text"
-                class="draft-textarea"
-                rows="8"
-              ></textarea>
-
-              <!-- Missing Variables (shown only when variables are missing) -->
-              <div id="missing-variables-container" class="missing-variables-container hidden">
-                <div class="missing-variables-header">
-                  <svg class="icon icon-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                  </svg>
-                  <span>Missing Variables</span>
-                </div>
-                <div id="missing-variable-chips" class="missing-variable-chips"></div>
-              </div>
-
-              <!-- Phase 3.5 — Edit Reason (shown above Insert) -->
-              <div id="edit-reason-container" class="edit-reason-container" style="margin-bottom:8px;">
-                <label for="edit-reason-code" class="label-xs" style="display:block;margin-bottom:4px;">Edit Reason</label>
-                <select id="edit-reason-code" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid #d1d5db;border-radius:4px;">
-                  <option value="unspecified">— select if edited —</option>
-                  <option value="tone_adjustment">Tone adjustment</option>
-                  <option value="added_context">Added context</option>
-                  <option value="corrected_info">Corrected information</option>
-                  <option value="policy_override">Policy override</option>
-                  <option value="personalization">Personalization</option>
-                  <option value="other">Other</option>
-                </select>
-                <input
-                  type="text"
-                  id="edit-freeform-note"
-                  placeholder="Optional note..."
-                  maxlength="200"
-                  style="margin-top:4px;width:100%;padding:4px 6px;font-size:12px;border:1px solid #d1d5db;border-radius:4px;"
-                />
-              </div>
-
-              <!-- Primary Action: Insert into CRM -->
-              <button
-                id="insert-crm-btn"
-                class="btn-primary btn-block btn-insert-crm"
-                disabled
-              >
-                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-                Insert into CRM
-              </button>
-
-              <!-- Secondary Action: Regenerate -->
-              <button
-                id="regenerate-btn"
-                class="btn-secondary btn-block btn-sm btn-regenerate"
-                type="button"
-              >
-                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Regenerate
-              </button>
-            </section>
+                      <!-- Draft Response -->
+                      <section class="section-card draft-card">
+                        <div class="section-header">
+                          <h2 class="section-title">Draft Response</h2>
+                        </div>
+                      
+                        <div class="draft-body">
+                          <textarea id="draft-text" class="draft-textarea" rows="8"></textarea>
+                      
+                          <!-- Missing Variables (shown only when variables are missing) -->
+                          <div id="missing-variables-container" class="missing-variables-container hidden">
+                            <div class="missing-variables-header">
+                              <svg class="icon icon-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                              </svg>
+                              <span>Missing Variables</span>
+                            </div>
+                            <div id="missing-variable-chips" class="missing-variable-chips"></div>
+                          </div>
+                      
+                          <!-- Button Stack -->
+                          <div class="draft-actions">
+                            <!-- Primary Action: Insert into CRM -->
+                            <button id="insert-crm-btn" class="btn-primary btn-block btn-insert-crm" disabled>
+                              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                              </svg>
+                              Insert into CRM
+                            </button>
+                      
+                            <!-- Secondary Action: Regenerate -->
+                            <button id="regenerate-btn" class="btn-secondary btn-block btn-sm btn-regenerate" type="button">
+                              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              Regenerate
+                            </button>
+                          </div>
+                        </div>
+                      </section>
 
            <!-- Follow-up Questions -->
 <section class="section-card" id="followup-section">
@@ -337,7 +317,7 @@
 </section>
 
             <!-- Canned Responses -->
-            <section class="section-card">
+            <section class="section-card canned-card">
               <h3 class="section-title">Canned Responses</h3>
 
               <div class="canned-dropdown">
@@ -370,57 +350,63 @@
                 AI-recommended responses.
               </p>
             </section>
-
-            <!-- Executive Summary -->
-<section class="section-card" id="executive-summary">
-  <h2 class="section-title">Executive Summary</h2>
-
-  <ul class="exec-list">
-    <li>
-      <strong>Draft Outcome:</strong>
-      <span id="exec-draft-outcome">—</span>
-    </li>
-
-    <li>
-      <strong>Recommended Action:</strong>
-      <span id="exec-recommended-action">—</span>
-    </li>
-
-    <li>
-      <strong>Auto-Send:</strong>
-      <span id="exec-auto-send-status">—</span>
-    </li>
-
-    <li>
-      <strong>Primary Risk:</strong>
-      <span id="exec-primary-risk">—</span>
-    </li>
-
-    <li>
-      <strong>Notes:</strong>
-      <span id="exec-notes">—</span>
-    </li>
-  </ul>
-
-  <!-- Weekly Executive Summary (collapsible, secondary) -->
-<div class="weekly-summary-wrapper">
-  <button
-    class="weekly-summary-toggle"
-    id="weekly-summary-toggle"
-    type="button"
-    aria-expanded="false"
-  >
-    Weekly Executive Summary
-    <span class="chevron">▾</span>
-  </button>
-
-  <div
-    class="weekly-summary-body hidden"
-    id="weekly-summary-body"
-  >
-    <p class="muted">Loading summary...</p>
-  </div>
-</div>
+    <section class="section-card" id="case-intelligence">
+    
+      <div class="section-header">
+        <h2 class="section-title">Case Intelligence</h2>
+      </div>
+    
+      <div class="section-body">
+    
+        <div id="status-pill" class="status-pill low">
+          LOW Risk | General
+        </div>
+    
+        <div id="smart-summary" class="smart-summary">
+          Loading intelligence...
+        </div>
+    
+        <div class="suggested-move">
+          <strong>Suggested Move:</strong>
+          <span id="suggested-action">—</span>
+        </div>
+    
+        <div class="trend-line">
+          <small id="trend-info">—</small>
+        </div>
+    
+      </div>
+    
+    </section>
+    <section class="section-card" id="analytics-summary">
+      <div class="section-header">
+        <h2 class="section-title">Analytics Snapshot</h2>
+      </div>
+    
+      <div class="section-body analytics-grid">
+    
+        <div class="analytics-item">
+          <div class="analytics-label">Total Drafts (7d)</div>
+          <div class="analytics-value" id="analytics-total">—</div>
+        </div>
+    
+        <div class="analytics-item">
+          <div class="analytics-label">Automation Rate</div>
+          <div class="analytics-value" id="analytics-auto">—</div>
+        </div>
+    
+        <div class="analytics-item">
+          <div class="analytics-label">Top Intent</div>
+          <div class="analytics-value" id="analytics-intent">—</div>
+        </div>
+    
+        <div class="analytics-item">
+          <div class="analytics-label">Risk Distribution</div>
+          <div class="analytics-value" id="analytics-risk">—</div>
+        </div>
+    
+      </div>
+    </section>
 
 <!-- Decision Explanation -->
 <section id="decision-explanation-section" class="sidecar-section hidden">

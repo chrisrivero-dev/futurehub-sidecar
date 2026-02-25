@@ -43,3 +43,7 @@ static/css/change
 static/css/forces
 static/css/mtime
 
+# Runtime generated data (audit + memory)
+data/
+data/
+data/audit/audit_events.jsonl

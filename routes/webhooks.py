@@ -10,6 +10,7 @@ import hmac
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from time import perf_counter
 
 from flask import Blueprint, jsonify, request
 
@@ -29,6 +30,7 @@ WEBHOOK_SECRET = os.getenv("FRESHDESK_WEBHOOK_SECRET", "")
 
 # ── Auth ──────────────────────────────────────────────────────
 
+
 def _verify_secret(req):
     """Compare shared secret from header. Returns True if valid."""
     if not WEBHOOK_SECRET:
@@ -42,6 +44,7 @@ def _sha256(text: str) -> str:
 
 
 # ── Helpers ───────────────────────────────────────────────────
+
 
 def _find_recent_draft(session, ticket_id: int, before: datetime | None = None):
     """Return the most recent DraftEvent for this ticket within the last 24h."""
@@ -58,6 +61,7 @@ def _find_recent_draft(session, ticket_id: int, before: datetime | None = None):
 
 
 # ── Endpoint ──────────────────────────────────────────────────
+
 
 @webhooks_bp.route("/freshdesk", methods=["POST"])
 def freshdesk_webhook():
@@ -88,32 +92,51 @@ def freshdesk_webhook():
     if not event_type or not fd_ticket_id or not fd_domain:
         return jsonify({"error": "missing event_type, freshdesk_ticket_id, or freshdesk_domain"}), 400
 
+    session = None
     try:
         session = SessionLocal()
-        try:
-            ticket = get_or_create_ticket(session, int(fd_ticket_id), fd_domain)
+        t0 = perf_counter()
 
-            if event_type == "reply_sent":
-                result = _handle_reply_sent(session, ticket, data)
-            elif event_type == "customer_replied":
-                result = _handle_customer_replied(session, ticket, data)
-            elif event_type == "status_changed":
-                result = _handle_status_changed(session, ticket, data)
-            else:
-                return jsonify({"error": f"unknown event_type: {event_type}"}), 400
+        t1 = perf_counter()
+        ticket = get_or_create_ticket(session, int(fd_ticket_id), fd_domain)
+        logger.info("webhook:get_or_create_ticket ms=%d", int((perf_counter() - t1) * 1000))
 
-            safe_commit(session)
-            return jsonify({"ok": True, **result}), 200
-        except Exception:
-            session.rollback()
-            session.close()
-            raise
+        if event_type == "reply_sent":
+            result = _handle_reply_sent(session, ticket, data)
+        elif event_type == "customer_replied":
+            result = _handle_customer_replied(session, ticket, data)
+        elif event_type == "status_changed":
+            result = _handle_status_changed(session, ticket, data)
+        else:
+            return jsonify({"error": f"unknown event_type: {event_type}"}), 400
+
+        t2 = perf_counter()
+        safe_commit(session)
+        logger.info("webhook:safe_commit ms=%d", int((perf_counter() - t2) * 1000))
+
+        logger.info("webhook:total ms=%d", int((perf_counter() - t0) * 1000))
+        return jsonify({"ok": True, **result}), 200
+
     except Exception as e:
-        logger.error("Webhook processing failed (non-fatal): %s", e)
+        try:
+            if session is not None:
+                session.rollback()
+        except Exception:
+            pass
+
+        logger.error("Webhook processing failed (non-fatal): %s", e, exc_info=True)
         return jsonify({"ok": True, "swallowed_error": True}), 200
+
+    finally:
+        try:
+            if session is not None:
+                session.close()
+        except Exception:
+            pass
 
 
 # ── Handlers ──────────────────────────────────────────────────
+
 
 def _handle_reply_sent(session, ticket, data):
     """
@@ -143,15 +166,17 @@ def _handle_reply_sent(session, ticket, data):
     if draft and draft.draft_hash and sent_hash:
         edited = (draft.draft_hash != sent_hash)
 
-    session.add(TicketReply(
-        ticket_id=ticket.id,
-        draft_event_id=draft_event_id,
-        direction="outbound",
-        freshdesk_conversation_id=int(conv_id),
-        body_hash=sent_hash,
-        body_length=sent_len,
-        edited=edited,
-    ))
+    session.add(
+        TicketReply(
+            ticket_id=ticket.id,
+            draft_event_id=draft_event_id,
+            direction="outbound",
+            freshdesk_conversation_id=int(conv_id),
+            body_hash=sent_hash,
+            body_length=sent_len,
+            edited=edited,
+        )
+    )
     return {"direction": "outbound", "edited": edited, "draft_linked": draft_event_id is not None}
 
 
@@ -170,15 +195,17 @@ def _handle_customer_replied(session, ticket, data):
     if existing:
         return {"duplicate": True}
 
-    session.add(TicketReply(
-        ticket_id=ticket.id,
-        draft_event_id=None,
-        direction="inbound",
-        freshdesk_conversation_id=int(conv_id),
-        body_hash=_sha256(body) if body else None,
-        body_length=len(body) if body else 0,
-        edited=None,
-    ))
+    session.add(
+        TicketReply(
+            ticket_id=ticket.id,
+            draft_event_id=None,
+            direction="inbound",
+            freshdesk_conversation_id=int(conv_id),
+            body_hash=_sha256(body) if body else None,
+            body_length=len(body) if body else 0,
+            edited=None,
+        )
+    )
     return {"direction": "inbound"}
 
 
@@ -202,10 +229,12 @@ def _handle_status_changed(session, ticket, data):
     else:
         fd_updated = datetime.now(timezone.utc)
 
-    session.add(TicketStatusChange(
-        ticket_id=ticket.id,
-        old_status=old_status,
-        new_status=new_status,
-        freshdesk_updated_at=fd_updated,
-    ))
+    session.add(
+        TicketStatusChange(
+            ticket_id=ticket.id,
+            old_status=old_status,
+            new_status=new_status,
+            freshdesk_updated_at=fd_updated,
+        )
+    )
     return {"old_status": old_status, "new_status": new_status}

@@ -24,17 +24,21 @@ window.addEventListener('message', (event) => {
     customerName.value = ticket.customer_name;
   }
 
-  // Auto-run draft pipeline once per unique ticket
-  const ticketKey = `${ticket.id || ''}_${ticket.subject || ''}`;
+  // Store ticket id for review mode
   if (window.aiSidecar) {
     window.aiSidecar._currentTicketId = ticket.id || null;
-    window.aiSidecar._showReviewButton();
+    if (typeof window.aiSidecar._showReviewButton === 'function') {
+      window.aiSidecar._showReviewButton();
+    }
   }
+
+  // Auto-run draft pipeline once per unique ticket
+  const ticketKey = `${ticket.id || ''}_${ticket.subject || ''}`;
   if (window.aiSidecar && ticketKey !== _lastAutoRunTicketKey) {
     _lastAutoRunTicketKey = ticketKey;
     window.aiSidecar.autoRunDraft();
   }
-});
+}); // ✅ CLOSES window.addEventListener('message', ...)
 
 // -----------------------------------------------------------
 // Helper text inserted by Suggested Actions
@@ -99,16 +103,175 @@ class AISidecar {
     this._currentStrategy = null;
     this._variableVerification = null;
     this._isAutoRunning = false;
-    this._currentTicketId = null;
-    this._inReviewMode = false;
 
     this.init();
     this.bindCollapseToggle();
     this.bindResetButton();
     this.loadCannedResponses();
     this.initReviewMode();
+    this.loadAnalyticsSummary(); // ← ADD THIS
+  }
+  initReviewMode() {
+    this._currentTicketId = null;
+    this._inReviewMode = false;
+
+    const header = document.querySelector('.header-controls');
+    if (!header) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'review-mode-btn';
+    btn.innerText = 'Review';
+    btn.style.display = 'none';
+    btn.style.marginLeft = '8px';
+    btn.classList.add('secondary-btn');
+
+    btn.addEventListener('click', () => {
+      if (!this._currentTicketId) return;
+      this._enterReviewMode();
+    });
+
+    header.appendChild(btn);
+    this._reviewBtn = btn;
+
+    const container = document.createElement('div');
+    container.id = 'review-mode-container';
+    container.style.display = 'none';
+    this.panel.appendChild(container);
   }
 
+  _showReviewButton() {
+    if (this._reviewBtn && this._currentTicketId) {
+      this._reviewBtn.style.display = 'inline-block';
+    }
+  }
+
+  async _enterReviewMode() {
+    if (this._inReviewMode) return;
+
+    this._inReviewMode = true;
+
+    document
+      .querySelector('.sidecar-collapsible')
+      ?.style.setProperty('display', 'none');
+    document
+      .getElementById('response-container')
+      ?.style.setProperty('display', 'none');
+
+    const container = document.getElementById('review-mode-container');
+    if (!container) return;
+
+    container.style.display = 'block';
+    container.innerHTML = 'Loading review data...';
+
+    try {
+      const res = await fetch(
+        `/api/v1/tickets/${this._currentTicketId}/review`
+      );
+
+      if (!res.ok) {
+        throw new Error(`Review fetch failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+      this._renderReviewContent(data);
+    } catch (err) {
+      console.error('Review load error:', err);
+      container.innerHTML = 'Failed to load review data.';
+    }
+  }
+  _renderReviewContent(data) {
+    const container = document.getElementById('review-mode-container');
+    if (!container) return;
+
+    const d = data.draft_summary || {};
+    const l = data.lifecycle || {};
+
+    container.innerHTML = `
+    <div class="section-card">
+      <div class="section-header">
+        <h2 class="section-title">Ticket Review</h2>
+      </div>
+      <div class="section-body">
+        <p><strong>Intent:</strong> ${d.intent || '—'}</p>
+        <p><strong>Confidence:</strong> ${d.confidence ?? '—'}</p>
+        <p><strong>Risk:</strong> ${d.risk_category || '—'}</p>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header">
+        <h2 class="section-title">Lifecycle Signals</h2>
+      </div>
+      <div class="section-body">
+        <p><strong>Outbound Replies:</strong> ${l.outbound_count || 0}</p>
+        <p><strong>Inbound Replies:</strong> ${l.inbound_count || 0}</p>
+        <p><strong>Edited:</strong> ${l.edited_count > 0 ? 'Yes' : 'No'}</p>
+        <p><strong>Follow-up:</strong> ${l.followup_detected ? 'Yes' : 'No'}</p>
+        <p><strong>Reopened:</strong> ${l.reopened ? 'Yes' : 'No'}</p>
+        <br/>
+        <button id="review-back-btn" class="secondary-btn">Back to Processing</button>
+      </div>
+    </div>
+  `;
+
+    const backBtn = document.getElementById('review-back-btn');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        this._exitReviewMode();
+      });
+    }
+  }
+
+  _exitReviewMode() {
+    this._inReviewMode = false;
+
+    const collapsible = document.querySelector('.sidecar-collapsible');
+    if (collapsible) {
+      collapsible.style.display = 'block';
+    }
+
+    const response = document.getElementById('response-container');
+    if (response) {
+      response.style.display = 'block';
+    }
+
+    const container = document.getElementById('review-mode-container');
+    if (container) {
+      container.style.display = 'none';
+    }
+  }
+
+  // -----------------------------
+  // Analytics Summary
+  // -----------------------------
+  async loadAnalyticsSummary() {
+    try {
+      const res = await fetch('/api/v1/analytics/weekly');
+      const data = await res.json();
+
+      if (!data.success) return;
+
+      const totalEl = document.getElementById('analytics-total');
+      const autoEl = document.getElementById('analytics-auto');
+      const intentEl = document.getElementById('analytics-intent');
+      const riskEl = document.getElementById('analytics-risk');
+
+      if (totalEl) totalEl.innerText = data.total_tickets;
+      if (autoEl) autoEl.innerText = data.automation_rate;
+
+      if (intentEl) {
+        intentEl.innerText = data.top_intents?.[0]?.intent || '—';
+      }
+
+      if (riskEl) {
+        riskEl.innerText = Object.entries(data.risk_distribution)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(' | ');
+      }
+    } catch (err) {
+      console.error('[sidecar] analytics load failed', err);
+    }
+  }
   // -----------------------------
   // Reset Button
   // -----------------------------
@@ -256,8 +419,12 @@ class AISidecar {
   // -----------------------------
   processTicket() {
     const subject = document.getElementById('subject')?.value?.trim();
-    const latestMessage = document.getElementById('latest-message')?.value?.trim();
-    const customerName = document.getElementById('customer-name')?.value?.trim();
+    const latestMessage = document
+      .getElementById('latest-message')
+      ?.value?.trim();
+    const customerName = document
+      .getElementById('customer-name')
+      ?.value?.trim();
 
     if (!subject || !latestMessage) {
       this.showToast('Subject and Latest Message are required', 'error');
@@ -287,7 +454,10 @@ class AISidecar {
     }
 
     // Check variable verification
-    if (this._variableVerification && this._variableVerification.has_required_missing) {
+    if (
+      this._variableVerification &&
+      this._variableVerification.has_required_missing
+    ) {
       this.showToast('Cannot insert: missing required variables', 'error');
       return;
     }
@@ -297,7 +467,9 @@ class AISidecar {
       try {
         var editMeta = this._collectEditReason();
         window.DraftEditTracker.processSendAction(text, editMeta);
-      } catch (_e) { /* never delay Send */ }
+      } catch (_e) {
+        /* never delay Send */
+      }
     }
 
     // Post message to parent (Freshdesk extension host)
@@ -502,6 +674,39 @@ class AISidecar {
       }
 
       const data = await response.json();
+      // ---------------------------
+      // CASE INTELLIGENCE UI UPDATE
+      // ---------------------------
+
+      const pill = document.getElementById('status-pill');
+      const summary = document.getElementById('smart-summary');
+      const suggested = document.getElementById('suggested-action');
+      const trend = document.getElementById('trend-info');
+
+      if (pill && summary && suggested && trend) {
+        const risk = data.governance?.risk_category || 'low';
+        const intent = data.intent_classification?.primary_intent || 'unknown';
+        const confidence = data.intent_classification?.confidence?.overall || 0;
+
+        pill.className = 'status-pill ' + risk;
+        pill.textContent = `${risk.toUpperCase()} Risk | ${intent.replace('_', ' ')}`;
+
+        summary.textContent =
+          `Customer issue: ${intent.replace('_', ' ')}. ` +
+          `Confidence: ${Math.round(confidence * 100)}%.`;
+
+        if (intent === 'shipping_status') {
+          suggested.textContent = 'Check carrier API for delay codes';
+        } else if (intent === 'unknown_vague') {
+          suggested.textContent = 'Ask for Order # or Device Model';
+        } else if (intent === 'setup_help') {
+          suggested.textContent = 'Confirm network + apollo.local access';
+        } else {
+          suggested.textContent = 'Review draft before sending';
+        }
+
+        trend.textContent = 'Trend data loading...';
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -568,7 +773,8 @@ class AISidecar {
     // ----------------------------
     const statusEl = document.getElementById('auto-run-status');
     if (statusEl) {
-      const hasRequiredMissing = data?.variable_verification?.has_required_missing;
+      const hasRequiredMissing =
+        data?.variable_verification?.has_required_missing;
       if (hasRequiredMissing) {
         statusEl.textContent = 'Missing data — review required fields below';
         statusEl.className = 'auto-run-status status-warning';
@@ -655,7 +861,10 @@ class AISidecar {
     this.renderConversationContext();
 
     // 10. Phase 3.5 — Store ephemeral draft + emit draft_presented
-    if (typeof window.DraftEditTracker !== 'undefined' && data?.draft?.response_text) {
+    if (
+      typeof window.DraftEditTracker !== 'undefined' &&
+      data?.draft?.response_text
+    ) {
       try {
         var draftId = window.DraftEditTracker.storeDraft({
           trace_id: data.trace_id || null,
@@ -673,7 +882,9 @@ class AISidecar {
           tokens: data.tokens_used || null,
           cost: data.cost || null,
         });
-      } catch (_e) { /* non-blocking */ }
+      } catch (_e) {
+        /* non-blocking */
+      }
     }
 
     // Scroll to top
@@ -837,7 +1048,9 @@ class AISidecar {
       }`;
     }
 
-    if (typeof window.renderExecutiveSummary === 'function') {
+    const execContainer = document.getElementById('executive-summary');
+
+    if (execContainer && typeof window.renderExecutiveSummary === 'function') {
       window.renderExecutiveSummary({
         resolutionLikely: confidence >= 0.7,
         missingInfo: input.missing_info_detected === true,
@@ -847,7 +1060,7 @@ class AISidecar {
         notes: input.notes || '',
       });
     }
-  }
+  } // ← THIS BRACE IS MISSING IN YOUR FILE
 
   renderIntent(classification) {
     if (!classification) return;
@@ -1009,132 +1222,6 @@ class AISidecar {
     };
   }
 
-  // -----------------------------
-  // Review Mode
-  // -----------------------------
-  initReviewMode() {
-    const headerControls = document.querySelector('.header-controls');
-    if (!headerControls) return;
-
-    const btn = document.createElement('button');
-    btn.id = 'review-mode-btn';
-    btn.className = 'btn-icon';
-    btn.title = 'Review Mode';
-    btn.style.display = 'none';
-    btn.innerHTML = `<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`;
-    headerControls.insertBefore(btn, headerControls.firstChild);
-    this._reviewBtn = btn;
-
-    const container = document.createElement('div');
-    container.id = 'review-mode-container';
-    container.className = 'hidden';
-    const scrollContent = document.querySelector('.sidecar-content:not(.sidecar-header-track)');
-    if (scrollContent) scrollContent.appendChild(container);
-    this._reviewContainer = container;
-
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (this._inReviewMode) {
-        this._exitReviewMode();
-      } else {
-        this._enterReviewMode();
-      }
-    });
-
-    const urlTid = new URLSearchParams(window.location.search).get('ticket_id');
-    if (urlTid) {
-      this._currentTicketId = parseInt(urlTid, 10);
-      this._showReviewButton();
-    }
-  }
-
-  _showReviewButton() {
-    if (this._reviewBtn && this._currentTicketId) {
-      this._reviewBtn.style.display = '';
-    }
-  }
-
-  async _enterReviewMode() {
-    if (!this._currentTicketId || !this._reviewContainer) return;
-
-    this._reviewContainer.innerHTML = '<p style="padding:12px;color:var(--text-muted,#888);">Loading review...</p>';
-
-    const collapsible = document.querySelector('.sidecar-collapsible');
-    const responseContainer = document.getElementById('response-container');
-    if (collapsible) collapsible.classList.add('hidden');
-    if (responseContainer) responseContainer.classList.add('hidden');
-    this._reviewContainer.classList.remove('hidden');
-    this._inReviewMode = true;
-    if (this._reviewBtn) this._reviewBtn.title = 'Back to Processing';
-
-    try {
-      const res = await fetch(`/api/v1/tickets/${this._currentTicketId}/review`);
-      if (!res.ok) throw new Error('Review fetch failed');
-      const data = await res.json();
-      this._renderReviewContent(data);
-    } catch (err) {
-      this._reviewContainer.innerHTML = '<p style="padding:12px;color:#d9534f;">Failed to load review data.</p>';
-      console.warn('[sidecar] Review mode error', err);
-    }
-  }
-
-  _exitReviewMode() {
-    const collapsible = document.querySelector('.sidecar-collapsible');
-    const responseContainer = document.getElementById('response-container');
-    if (this._reviewContainer) this._reviewContainer.classList.add('hidden');
-    if (collapsible) collapsible.classList.remove('hidden');
-    if (responseContainer && responseContainer.querySelector('.section-card:not(.hidden)')) {
-      responseContainer.classList.remove('hidden');
-    }
-    this._inReviewMode = false;
-    if (this._reviewBtn) this._reviewBtn.title = 'Review Mode';
-  }
-
-  _renderReviewContent(data) {
-    if (!this._reviewContainer) return;
-    const ds = data.draft_summary || {};
-    const lc = data.lifecycle || {};
-
-    const fmtIntent = ds.intent
-      ? String(ds.intent).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-      : 'N/A';
-    const confPct = typeof ds.confidence === 'number' ? Math.round(ds.confidence * 100) + '%' : 'N/A';
-    const risk = ds.risk_category || 'N/A';
-
-    this._reviewContainer.innerHTML = `
-      <section class="section-card" style="margin-top:0;">
-        <h2 class="section-title">Ticket Review</h2>
-        <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
-          <button id="review-back-btn" type="button" class="btn-icon" title="Back to Processing" style="font-size:12px;padding:4px 10px;border:1px solid var(--border,#ddd);border-radius:4px;cursor:pointer;">Back</button>
-        </div>
-        <ul style="list-style:none;margin:0;padding:0;line-height:2;">
-          <li><strong>Intent:</strong> ${fmtIntent}</li>
-          <li><strong>Confidence:</strong> ${confPct}</li>
-          <li><strong>Risk:</strong> ${risk}</li>
-          <li><strong>LLM Used:</strong> ${ds.llm_used ? 'Yes' : 'No'}</li>
-        </ul>
-      </section>
-      <section class="section-card">
-        <h2 class="section-title">Lifecycle Signals</h2>
-        <ul style="list-style:none;margin:0;padding:0;line-height:2;">
-          <li><strong>Outbound Replies:</strong> ${lc.outbound_count ?? 0}</li>
-          <li><strong>Inbound Replies:</strong> ${lc.inbound_count ?? 0}</li>
-          <li><strong>Edited:</strong> ${ds.edited ? 'Yes' : 'No'}</li>
-          <li><strong>Follow-up:</strong> ${lc.followup_detected ? 'Yes' : 'No'}</li>
-          <li><strong>Reopened:</strong> ${lc.reopened ? 'Yes' : 'No'}</li>
-        </ul>
-      </section>
-    `;
-
-    this._reviewContainer.querySelector('#review-back-btn')
-      ?.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this._exitReviewMode();
-      });
-  }
-
   renderConversationContext() {
     const messagesContainer = document.getElementById('conversation-messages');
     if (!messagesContainer) return;
@@ -1265,8 +1352,7 @@ function updateExecutiveSummary({
     : 'Human review recommended before sending.';
 }
 
-const RALPH_WEEKLY_SUMMARY_URL =
-  '/api/v1/analytics/weekly';
+const RALPH_WEEKLY_SUMMARY_URL = '/api/v1/analytics/weekly';
 
 let cachedWeeklySummary = null;
 let lastWeeklyFetch = 0;
@@ -1326,9 +1412,15 @@ function renderWeeklySummary(summary) {
 
     <div class="summary-section">
       <strong>Top Intents</strong>
-      ${topIntents.length
-        ? '<ul>' + topIntents.map((i) => `<li>${escapeHtml(i.intent)} (${i.count})</li>`).join('') + '</ul>'
-        : '<p class="muted">None</p>'}
+      ${
+        topIntents.length
+          ? '<ul>' +
+            topIntents
+              .map((i) => `<li>${escapeHtml(i.intent)} (${i.count})</li>`)
+              .join('') +
+            '</ul>'
+          : '<p class="muted">None</p>'
+      }
     </div>
 
     <div class="summary-section">
@@ -1340,9 +1432,11 @@ function renderWeeklySummary(summary) {
       </ul>
     </div>
 
-    ${summary.generated_at
-      ? `<p class="muted">Updated: ${new Date(summary.generated_at).toLocaleDateString()}</p>`
-      : ''}
+    ${
+      summary.generated_at
+        ? `<p class="muted">Updated: ${new Date(summary.generated_at).toLocaleDateString()}</p>`
+        : ''
+    }
   `;
 }
 
@@ -1460,49 +1554,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.aiSidecar = new AISidecar();
 
-  // Ticket Review Mode — activate only when ?ticket_id= is present in URL
-  const _ticketIdParam = new URLSearchParams(window.location.search).get('ticket_id');
-  if (_ticketIdParam) {
-    _loadTicketSignals(parseInt(_ticketIdParam, 10));
+  if (window.aiSidecar.loadAnalyticsSummary) {
+    window.aiSidecar.loadAnalyticsSummary();
   }
 });
-
-// -----------------------------
-// Ticket Signals (Review Mode)
-// -----------------------------
-async function _loadTicketSignals(ticketId) {
-  if (!ticketId) return;
-
-  try {
-    const res = await fetch(`/api/v1/tickets/${ticketId}/review`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (!data.success) return;
-    _renderTicketSignals(data);
-  } catch (err) {
-    console.warn('[sidecar] Ticket signals unavailable', err);
-  }
-}
-
-function _renderTicketSignals(data) {
-  const lc = data.lifecycle || {};
-  const anchor = document.querySelector('.weekly-summary-wrapper');
-  if (!anchor) return;
-
-  const block = document.createElement('div');
-  block.id = 'ticket-signals-block';
-  block.style.cssText = 'margin-top:12px;padding:10px 12px;background:var(--bg-secondary,#f6f8fa);border-radius:6px;font-size:13px;';
-
-  block.innerHTML = `
-    <strong style="display:block;margin-bottom:6px;">Ticket Signals</strong>
-    <ul style="list-style:none;margin:0;padding:0;line-height:1.9;">
-      <li><span style="color:var(--text-muted,#888);">Outbound Replies:</span> ${lc.outbound_count ?? 0}</li>
-      <li><span style="color:var(--text-muted,#888);">Inbound Replies:</span> ${lc.inbound_count ?? 0}</li>
-      <li><span style="color:var(--text-muted,#888);">Edited:</span> ${lc.edited_count > 0 ? 'Yes' : 'No'}</li>
-      <li><span style="color:var(--text-muted,#888);">Follow-up:</span> ${lc.followup_detected ? 'Yes' : 'No'}</li>
-      <li><span style="color:var(--text-muted,#888);">Reopened:</span> ${lc.reopened ? 'Yes' : 'No'}</li>
-    </ul>
-  `;
-
-  anchor.insertAdjacentElement('afterend', block);
-}

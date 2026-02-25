@@ -1,3 +1,5 @@
+from db import DATABASE_URL
+print(">>> ACTIVE DATABASE_URL:", DATABASE_URL)
 """
 FutureHub AI Sidecar (v1.0)
 POST /api/v1/draft endpoint with intent classification and draft generation
@@ -26,7 +28,9 @@ from utils.build import build_id
 
 from audit import set_trace_id, get_trace_id
 from audit.events import emit_event
-
+from db import SessionLocal, safe_commit
+from flask import Flask, request, jsonify, render_template  # ensure render_template is here
+from routes.webhooks import webhooks_bp
 
 # =========================
 # App Initialization
@@ -35,15 +39,50 @@ from audit.events import emit_event
 load_dotenv()
 
 app = Flask(__name__)
+from db import engine
+from models import Base
+
+Base.metadata.create_all(bind=engine)
+
 
 # Register blueprints ONCE
 app.register_blueprint(sidecar_ui_bp)
 app.register_blueprint(insights_bp)
 app.register_blueprint(analytics_bp)
+app.register_blueprint(webhooks_bp)
+
 
 logger = logging.getLogger(__name__)
 
+@app.route("/sidecar/", methods=["GET"])
+def sidecar_page():
+    return render_template("ai_sidecar.html"), 200
 
+@app.route("/", methods=["GET", "HEAD"])
+def railway_root():
+    return render_template("ai_sidecar.html"), 200
+@app.route("/debug-draft-inspect", methods=["GET"])
+def debug_draft_inspect():
+    from db import SessionLocal
+    from models import DraftEvent
+
+    session = SessionLocal()
+    try:
+        rows = session.query(DraftEvent).all()
+        return {
+            "count": len(rows),
+            "rows": [
+                {
+                    "id": r.id,
+                    "created_at": str(r.created_at),
+                    "intent": r.intent,
+                    "risk_category": r.risk_category,
+                }
+                for r in rows
+            ]
+        }, 200
+    finally:
+        session.close()
 # =========================
 # Build Metadata
 # =========================
@@ -130,9 +169,7 @@ def llm_allowed():
 
 
 
-@app.route("/", methods=["GET", "HEAD"], endpoint="railway_root", provide_automatic_options=False)
-def railway_root():
-    return "OK", 200
+from flask import render_template
 
 
 # Payload limits
@@ -312,13 +349,22 @@ def draft():
         for m in conversation_history
         if isinstance(m, dict) and m.get("role") == "agent"
     ]
-
+    session = SessionLocal()
+    print(">>> GD session passed:", bool(session))
+    print(">>> ROUTE freshdesk_ticket_id:", data.get("freshdesk_ticket_id"))
+    print(">>> ROUTE freshdesk_domain:", data.get("freshdesk_domain"))
     draft_output = generate_draft(
         latest_message=augmented_input,
         intent=intent,
         prior_draft=agent_history[-1] if agent_history else None,
         prior_agent_messages=agent_history,
+        session=session,
+        freshdesk_ticket_id=data.get("freshdesk_ticket_id"),
+        freshdesk_domain=data.get("freshdesk_domain"),
     )
+
+    safe_commit(session)
+    print(">>> COMMIT CALLED")
 
     if isinstance(draft_output, dict):
         draft_result = draft_output
@@ -364,7 +410,7 @@ def draft():
     # ==========================================================
     # STEP 8: Customer Name Injection
     # ==========================================================
-    draft_text = draft_result.get("response_text", "")
+    draft_text = draft_output["response_text"]
 
     customer_name = data.get("customer_name")
     if customer_name and customer_name not in draft_text:
@@ -685,6 +731,10 @@ def debug_env():
         "domain": os.environ.get("FRESHDESK_DOMAIN"),
         "api_key_exists": bool(os.environ.get("FRESHDESK_API_KEY"))
     }
+# ---- routes above ----
+
+print("ROUTES REGISTERED:")
+print(app.url_map)
 
 
 # ==========================================================
@@ -765,19 +815,8 @@ def freshdesk_webhook():
 
     finally:
         session.close()
-
-
-
-# ==========================================================
-# Ticket Review Endpoint
-# GET /api/v1/tickets/<ticket_id>/review
-# ==========================================================
-
 @app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
-def ticket_review(ticket_id):
-    from db import SessionLocal
-    from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
-
+def review_ticket(ticket_id):
     empty = {
         "success": True,
         "ticket_id": ticket_id,
@@ -799,103 +838,97 @@ def ticket_review(ticket_id):
         "kb_recommendations": [],
     }
 
-    session = SessionLocal()
     try:
-        ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
-        if not ticket:
-            return jsonify(empty), 200
+        from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
+        from db import SessionLocal
+        from sqlalchemy import desc
 
-        local_id = ticket.id
+        session = SessionLocal()
+        try:
+            # Resolve freshdesk ticket_id to local DB id
+            ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
+            if not ticket:
+                return empty
+            local_id = ticket.id
 
-        # ── Fetch all related rows ──────────────────────────────
-        drafts = (
-            session.query(DraftEvent)
-            .filter(DraftEvent.ticket_id == local_id)
-            .order_by(DraftEvent.created_at.desc())
-            .all()
-        )
+            # Most recent draft for this ticket
+            drafts = (
+                session.query(DraftEvent)
+                .filter(DraftEvent.ticket_id == local_id)
+                .order_by(desc(DraftEvent.created_at))
+                .all()
+            )
+            latest_draft = drafts[0] if drafts else None
 
-        replies = (
-            session.query(TicketReply)
-            .filter(TicketReply.ticket_id == local_id)
-            .order_by(TicketReply.created_at.asc())
-            .all()
-        )
+            # All replies, ordered by time for first-outbound detection
+            replies = (
+                session.query(TicketReply)
+                .filter(TicketReply.ticket_id == local_id)
+                .order_by(TicketReply.created_at.asc())
+                .all()
+            )
 
-        status_changes = (
-            session.query(TicketStatusChange)
-            .filter(TicketStatusChange.ticket_id == local_id)
-            .all()
-        )
+            status_changes = (
+                session.query(TicketStatusChange)
+                .filter(TicketStatusChange.ticket_id == local_id)
+                .all()
+            )
 
-        # ── Draft Summary (most recent DraftEvent) ─────────────
-        latest = drafts[0] if drafts else None
+            outbound = [r for r in replies if r.direction == "outbound"]
+            inbound = [r for r in replies if r.direction == "inbound"]
+            edited_count = sum(1 for r in outbound if r.edited is True)
 
-        # ── Reply counts ────────────────────────────────────────
-        outbound = [r for r in replies if r.direction == "outbound"]
-        inbound  = [r for r in replies if r.direction == "inbound"]
-        edited_outbound = [r for r in outbound if r.edited is True]
-        edited_count = len(edited_outbound)
-        edited_flag = edited_count > 0
+            # strategy = DraftEvent.mode (e.g. "template", "llm", "hybrid")
+            strategy = latest_draft.mode if latest_draft else None
 
-        # strategy = DraftEvent.mode (e.g. "template", "llm", "hybrid")
-        strategy = latest.mode if latest else None
+            # followup: >1 inbound replies after the first outbound
+            followup_detected = False
+            if outbound and inbound:
+                first_outbound_at = outbound[0].created_at
+                inbound_after = [r for r in inbound if r.created_at > first_outbound_at]
+                followup_detected = len(inbound_after) > 1
 
-        # ── Followup detected ───────────────────────────────────
-        # True if >1 inbound replies arrived after the first outbound reply
-        followup_detected = False
-        if outbound and inbound:
-            first_outbound_at = outbound[0].created_at
-            inbound_after = [r for r in inbound if r.created_at > first_outbound_at]
-            followup_detected = len(inbound_after) > 1
+            # reopened: any resolved/closed → open transition
+            reopened = any(
+                s.old_status in ("resolved", "closed") and s.new_status == "open"
+                for s in status_changes
+            )
 
-        # ── Reopened ────────────────────────────────────────────
-        # True if any status transition went from resolved/closed → open
-        reopened = any(
-            s.old_status in ("resolved", "closed") and s.new_status == "open"
-            for s in status_changes
-        )
+            # Lifecycle-computed risk category
+            confidence_val = latest_draft.confidence if latest_draft else None
+            if edited_count > 1 or reopened or (confidence_val is not None and confidence_val < 0.75):
+                risk_category = "high"
+            elif edited_count == 1:
+                risk_category = "medium"
+            else:
+                risk_category = "low"
 
-        # ── Risk Category (lifecycle-computed) ──────────────────
-        # high: edited_count > 1, or reopened, or confidence < 0.75
-        # medium: edited_count == 1
-        # low: otherwise
-        confidence_val = latest.confidence if latest else None
-        if edited_count > 1 or reopened or (confidence_val is not None and confidence_val < 0.75):
-            risk_category = "high"
-        elif edited_count == 1:
-            risk_category = "medium"
-        else:
-            risk_category = "low"
-
-        return jsonify({
-            "success": True,
-            "ticket_id": ticket_id,
-            "draft_summary": {
-                "intent": latest.intent if latest else None,
-                "confidence": confidence_val,
-                "risk_category": risk_category,
-                "strategy": strategy,
-                "llm_used": latest.llm_used if latest else False,
-                "edited": edited_flag,
-            },
-            "lifecycle": {
-                "outbound_count": len(outbound),
-                "inbound_count": len(inbound),
-                "edited_count": edited_count,
-                "followup_detected": followup_detected,
-                "reopened": reopened,
-            },
-            "kb_recommendations": [],
-        }), 200
+            return {
+                "success": True,
+                "ticket_id": ticket_id,
+                "draft_summary": {
+                    "intent": latest_draft.intent if latest_draft else None,
+                    "confidence": confidence_val,
+                    "risk_category": risk_category,
+                    "strategy": strategy,
+                    "llm_used": latest_draft.llm_used if latest_draft else False,
+                    "edited": edited_count > 0,
+                },
+                "lifecycle": {
+                    "outbound_count": len(outbound),
+                    "inbound_count": len(inbound),
+                    "edited_count": edited_count,
+                    "followup_detected": followup_detected,
+                    "reopened": reopened,
+                },
+                "kb_recommendations": [],
+            }
+        finally:
+            session.close()
 
     except Exception as e:
-        logger.error("Ticket review query failed: %s", e)
-        return jsonify(empty), 200
-
-    finally:
-        session.close()
-
+        logger.error("review_ticket failed: %s", e)
+        return empty
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, use_reloader=False, port=5000)

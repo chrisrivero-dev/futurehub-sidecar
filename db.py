@@ -11,6 +11,7 @@ import logging
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -47,3 +48,37 @@ def safe_commit(session):
         logger.error("DB commit failed (non-fatal): %s", e)
     finally:
         session.close()
+
+def get_or_create_ticket(session, freshdesk_ticket_id: str, freshdesk_domain: str):
+    """
+    Non-blocking helper: returns Ticket or None.
+    Never raises.
+    """
+    try:
+        # Import locally to avoid circular import
+        from models import Ticket
+
+        ticket = (
+            session.query(Ticket)
+            .filter_by(
+                freshdesk_ticket_id=freshdesk_ticket_id,
+                freshdesk_domain=freshdesk_domain,
+            )
+            .first()
+        )
+
+        if ticket:
+            return ticket
+
+        ticket = Ticket(
+            freshdesk_ticket_id=freshdesk_ticket_id,
+            freshdesk_domain=freshdesk_domain,
+        )
+        session.add(ticket)
+        session.commit()
+        session.refresh(ticket)
+        return ticket
+
+    except Exception:
+        session.rollback()
+        return None
