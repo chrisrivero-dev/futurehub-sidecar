@@ -1490,26 +1490,15 @@ AISidecar.prototype._enterReviewMode = async function () {
   }
 };
 
-AISidecar.prototype._exitReviewMode = function () {
-  this._inReviewMode = false;
-
-  document
-    .querySelector('.sidecar-collapsible')
-    ?.style.setProperty('display', 'block');
-  document
-    .getElementById('response-container')
-    ?.style.setProperty('display', 'block');
-
-  const container = document.getElementById('review-mode-container');
-  container.style.display = 'none';
-};
-
 AISidecar.prototype._renderReviewContent = function (data) {
   const container = document.getElementById('review-mode-container');
+  if (!container) return; // Exit if the container doesn't exist
 
+  // Safely extract data with defaults
   const d = data.draft_summary || {};
   const l = data.lifecycle || {};
 
+  // 1. Set the HTML
   container.innerHTML = `
     <div class="section-card">
       <div class="section-header">
@@ -1536,10 +1525,13 @@ AISidecar.prototype._renderReviewContent = function (data) {
         <button id="review-back-btn" class="secondary-btn">Back to Processing</button>
       </div>
     </div>
-  `;
+  `; // <--- ENSURE THIS BACKTICK AND SEMICOLON ARE HERE
 
-  document.getElementById('review-back-btn').addEventListener('click', () => {
-    this._exitReviewMode();
-  });
-};
-}
+  // 2. Attach the listener only AFTER the HTML is set
+  const backBtn = document.getElementById('review-back-btn');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      this._exitReviewMode();
+    });
+  }
+}; // <--- THIS CLOSES THE FUNCTION
