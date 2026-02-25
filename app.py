@@ -815,7 +815,95 @@ def freshdesk_webhook():
 
     finally:
         session.close()
+@app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
+def review_ticket(ticket_id):
+    try:
+        from models import DraftEvent, TicketReply, TicketStatusChange
+        from db import SessionLocal
+        from sqlalchemy import desc
 
+        session = SessionLocal()
+        try:
+            draft_events = (
+                session.query(DraftEvent)
+                .filter(DraftEvent.ticket_id == ticket_id)
+                .order_by(desc(DraftEvent.created_at))
+                .all()
+            )
+
+            latest_draft = draft_events[0] if draft_events else None
+
+            replies = (
+                session.query(TicketReply)
+                .filter(TicketReply.ticket_id == ticket_id)
+                .all()
+            )
+
+            status_changes = (
+                session.query(TicketStatusChange)
+                .filter(TicketStatusChange.ticket_id == ticket_id)
+                .all()
+            )
+
+            outbound = [r for r in replies if r.direction == "outbound"]
+            inbound = [r for r in replies if r.direction == "inbound"]
+
+            edited = any(r.edited is True for r in outbound)
+
+            followup_detected = False
+            if latest_draft:
+                followup_detected = any(
+                    r.created_at > latest_draft.created_at for r in inbound
+                )
+
+            reopened = any(
+                s.old_status in ("resolved", "closed")
+                and s.new_status == "open"
+                for s in status_changes
+            )
+
+            return {
+                "success": True,
+                "ticket_id": ticket_id,
+                "draft_summary": {
+                    "intent": latest_draft.intent if latest_draft else None,
+                    "confidence": latest_draft.confidence if latest_draft else None,
+                    "risk_category": latest_draft.risk_category if latest_draft else None,
+                    "strategy": latest_draft.strategy if latest_draft else None,
+                    "llm_used": latest_draft.llm_used if latest_draft else False,
+                    "edited": edited,
+                },
+                "lifecycle": {
+                    "outbound_count": len(outbound),
+                    "inbound_count": len(inbound),
+                    "edited_count": sum(1 for r in outbound if r.edited is True),
+                    "followup_detected": followup_detected,
+                    "reopened": reopened,
+                },
+            }
+        finally:
+            session.close()
+
+    except Exception as e:
+        return {
+            "success": True,
+            "ticket_id": ticket_id,
+            "draft_summary": {
+                "intent": None,
+                "confidence": None,
+                "risk_category": None,
+                "strategy": None,
+                "llm_used": False,
+                "edited": False,
+            },
+            "lifecycle": {
+                "outbound_count": 0,
+                "inbound_count": 0,
+                "edited_count": 0,
+                "followup_detected": False,
+                "reopened": False,
+            },
+        }
 
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False, port=5000)
