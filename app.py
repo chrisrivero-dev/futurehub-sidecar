@@ -796,6 +796,7 @@ def ticket_review(ticket_id):
             "followup_detected": False,
             "reopened": False,
         },
+        "kb_recommendations": [],
     }
 
     session = SessionLocal()
@@ -806,6 +807,7 @@ def ticket_review(ticket_id):
 
         local_id = ticket.id
 
+        # ── Fetch all related rows ──────────────────────────────
         drafts = (
             session.query(DraftEvent)
             .filter(DraftEvent.ticket_id == local_id)
@@ -816,6 +818,7 @@ def ticket_review(ticket_id):
         replies = (
             session.query(TicketReply)
             .filter(TicketReply.ticket_id == local_id)
+            .order_by(TicketReply.created_at.asc())
             .all()
         )
 
@@ -825,45 +828,65 @@ def ticket_review(ticket_id):
             .all()
         )
 
-        # draft_summary — from most recent DraftEvent
+        # ── Draft Summary (most recent DraftEvent) ─────────────
         latest = drafts[0] if drafts else None
+
+        # ── Reply counts ────────────────────────────────────────
         outbound = [r for r in replies if r.direction == "outbound"]
         inbound  = [r for r in replies if r.direction == "inbound"]
         edited_outbound = [r for r in outbound if r.edited is True]
+        edited_count = len(edited_outbound)
+        edited_flag = edited_count > 0
 
-        edited_flag = len(edited_outbound) > 0
+        # strategy = DraftEvent.mode (e.g. "template", "llm", "hybrid")
+        strategy = latest.mode if latest else None
 
-        # followup_detected: any inbound reply after latest draft's created_at
+        # ── Followup detected ───────────────────────────────────
+        # True if >1 inbound replies arrived after the first outbound reply
         followup_detected = False
-        if latest and inbound:
-            followup_detected = any(
-                r.created_at > latest.created_at for r in inbound
-            )
+        if outbound and inbound:
+            first_outbound_at = outbound[0].created_at
+            inbound_after = [r for r in inbound if r.created_at > first_outbound_at]
+            followup_detected = len(inbound_after) > 1
 
-        # reopened: any transition from resolved/closed to open
+        # ── Reopened ────────────────────────────────────────────
+        # True if any status transition went from resolved/closed → open
         reopened = any(
             s.old_status in ("resolved", "closed") and s.new_status == "open"
             for s in status_changes
         )
+
+        # ── Risk Category (lifecycle-computed) ──────────────────
+        # high: edited_count > 1, or reopened, or confidence < 0.75
+        # medium: edited_count == 1
+        # low: otherwise
+        confidence_val = latest.confidence if latest else None
+        if edited_count > 1 or reopened or (confidence_val is not None and confidence_val < 0.75):
+            risk_category = "high"
+        elif edited_count == 1:
+            risk_category = "medium"
+        else:
+            risk_category = "low"
 
         return jsonify({
             "success": True,
             "ticket_id": ticket_id,
             "draft_summary": {
                 "intent": latest.intent if latest else None,
-                "confidence": latest.confidence if latest else None,
-                "risk_category": latest.risk_category if latest else None,
-                "strategy": None,
+                "confidence": confidence_val,
+                "risk_category": risk_category,
+                "strategy": strategy,
                 "llm_used": latest.llm_used if latest else False,
                 "edited": edited_flag,
             },
             "lifecycle": {
                 "outbound_count": len(outbound),
                 "inbound_count": len(inbound),
-                "edited_count": len(edited_outbound),
+                "edited_count": edited_count,
                 "followup_detected": followup_detected,
                 "reopened": reopened,
             },
+            "kb_recommendations": [],
         }), 200
 
     except Exception as e:
