@@ -26,6 +26,10 @@ window.addEventListener('message', (event) => {
 
   // Auto-run draft pipeline once per unique ticket
   const ticketKey = `${ticket.id || ''}_${ticket.subject || ''}`;
+  if (window.aiSidecar) {
+    window.aiSidecar._currentTicketId = ticket.id || null;
+    window.aiSidecar._showReviewButton();
+  }
   if (window.aiSidecar && ticketKey !== _lastAutoRunTicketKey) {
     _lastAutoRunTicketKey = ticketKey;
     window.aiSidecar.autoRunDraft();
@@ -95,11 +99,14 @@ class AISidecar {
     this._currentStrategy = null;
     this._variableVerification = null;
     this._isAutoRunning = false;
+    this._currentTicketId = null;
+    this._inReviewMode = false;
 
     this.init();
     this.bindCollapseToggle();
     this.bindResetButton();
     this.loadCannedResponses();
+    this.initReviewMode();
   }
 
   // -----------------------------
@@ -1000,6 +1007,132 @@ class AISidecar {
       reason_code: reasonSelect ? reasonSelect.value : 'unspecified',
       freeform_note: noteInput ? noteInput.value.trim() : '',
     };
+  }
+
+  // -----------------------------
+  // Review Mode
+  // -----------------------------
+  initReviewMode() {
+    const headerControls = document.querySelector('.header-controls');
+    if (!headerControls) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'review-mode-btn';
+    btn.className = 'btn-icon';
+    btn.title = 'Review Mode';
+    btn.style.display = 'none';
+    btn.innerHTML = `<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`;
+    headerControls.insertBefore(btn, headerControls.firstChild);
+    this._reviewBtn = btn;
+
+    const container = document.createElement('div');
+    container.id = 'review-mode-container';
+    container.className = 'hidden';
+    const scrollContent = document.querySelector('.sidecar-content:not(.sidecar-header-track)');
+    if (scrollContent) scrollContent.appendChild(container);
+    this._reviewContainer = container;
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this._inReviewMode) {
+        this._exitReviewMode();
+      } else {
+        this._enterReviewMode();
+      }
+    });
+
+    const urlTid = new URLSearchParams(window.location.search).get('ticket_id');
+    if (urlTid) {
+      this._currentTicketId = parseInt(urlTid, 10);
+      this._showReviewButton();
+    }
+  }
+
+  _showReviewButton() {
+    if (this._reviewBtn && this._currentTicketId) {
+      this._reviewBtn.style.display = '';
+    }
+  }
+
+  async _enterReviewMode() {
+    if (!this._currentTicketId || !this._reviewContainer) return;
+
+    this._reviewContainer.innerHTML = '<p style="padding:12px;color:var(--text-muted,#888);">Loading review...</p>';
+
+    const collapsible = document.querySelector('.sidecar-collapsible');
+    const responseContainer = document.getElementById('response-container');
+    if (collapsible) collapsible.classList.add('hidden');
+    if (responseContainer) responseContainer.classList.add('hidden');
+    this._reviewContainer.classList.remove('hidden');
+    this._inReviewMode = true;
+    if (this._reviewBtn) this._reviewBtn.title = 'Back to Processing';
+
+    try {
+      const res = await fetch(`/api/v1/tickets/${this._currentTicketId}/review`);
+      if (!res.ok) throw new Error('Review fetch failed');
+      const data = await res.json();
+      this._renderReviewContent(data);
+    } catch (err) {
+      this._reviewContainer.innerHTML = '<p style="padding:12px;color:#d9534f;">Failed to load review data.</p>';
+      console.warn('[sidecar] Review mode error', err);
+    }
+  }
+
+  _exitReviewMode() {
+    const collapsible = document.querySelector('.sidecar-collapsible');
+    const responseContainer = document.getElementById('response-container');
+    if (this._reviewContainer) this._reviewContainer.classList.add('hidden');
+    if (collapsible) collapsible.classList.remove('hidden');
+    if (responseContainer && responseContainer.querySelector('.section-card:not(.hidden)')) {
+      responseContainer.classList.remove('hidden');
+    }
+    this._inReviewMode = false;
+    if (this._reviewBtn) this._reviewBtn.title = 'Review Mode';
+  }
+
+  _renderReviewContent(data) {
+    if (!this._reviewContainer) return;
+    const ds = data.draft_summary || {};
+    const lc = data.lifecycle || {};
+
+    const fmtIntent = ds.intent
+      ? String(ds.intent).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+      : 'N/A';
+    const confPct = typeof ds.confidence === 'number' ? Math.round(ds.confidence * 100) + '%' : 'N/A';
+    const risk = ds.risk_category || 'N/A';
+
+    this._reviewContainer.innerHTML = `
+      <section class="section-card" style="margin-top:0;">
+        <h2 class="section-title">Ticket Review</h2>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+          <button id="review-back-btn" type="button" class="btn-icon" title="Back to Processing" style="font-size:12px;padding:4px 10px;border:1px solid var(--border,#ddd);border-radius:4px;cursor:pointer;">Back</button>
+        </div>
+        <ul style="list-style:none;margin:0;padding:0;line-height:2;">
+          <li><strong>Intent:</strong> ${fmtIntent}</li>
+          <li><strong>Confidence:</strong> ${confPct}</li>
+          <li><strong>Risk:</strong> ${risk}</li>
+          <li><strong>LLM Used:</strong> ${ds.llm_used ? 'Yes' : 'No'}</li>
+        </ul>
+      </section>
+      <section class="section-card">
+        <h2 class="section-title">Lifecycle Signals</h2>
+        <ul style="list-style:none;margin:0;padding:0;line-height:2;">
+          <li><strong>Outbound Replies:</strong> ${lc.outbound_count ?? 0}</li>
+          <li><strong>Inbound Replies:</strong> ${lc.inbound_count ?? 0}</li>
+          <li><strong>Edited:</strong> ${ds.edited ? 'Yes' : 'No'}</li>
+          <li><strong>Follow-up:</strong> ${lc.followup_detected ? 'Yes' : 'No'}</li>
+          <li><strong>Reopened:</strong> ${lc.reopened ? 'Yes' : 'No'}</li>
+        </ul>
+      </section>
+    `;
+
+    this._reviewContainer.querySelector('#review-back-btn')
+      ?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._exitReviewMode();
+      });
   }
 
   renderConversationContext() {
