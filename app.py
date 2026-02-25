@@ -817,6 +817,7 @@ def freshdesk_webhook():
         session.close()
 @app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
 def review_ticket(ticket_id):
+<<<<<<< HEAD
     try:
         from models import DraftEvent, TicketReply, TicketStatusChange
         from db import SessionLocal
@@ -836,17 +837,72 @@ def review_ticket(ticket_id):
             replies = (
                 session.query(TicketReply)
                 .filter(TicketReply.ticket_id == ticket_id)
+=======
+    empty = {
+        "success": True,
+        "ticket_id": ticket_id,
+        "draft_summary": {
+            "intent": None,
+            "confidence": None,
+            "risk_category": None,
+            "strategy": None,
+            "llm_used": False,
+            "edited": False,
+        },
+        "lifecycle": {
+            "outbound_count": 0,
+            "inbound_count": 0,
+            "edited_count": 0,
+            "followup_detected": False,
+            "reopened": False,
+        },
+        "kb_recommendations": [],
+    }
+
+    try:
+        from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
+        from db import SessionLocal
+        from sqlalchemy import desc
+
+        session = SessionLocal()
+        try:
+            # Resolve freshdesk ticket_id to local DB id
+            ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
+            if not ticket:
+                return empty
+            local_id = ticket.id
+
+            # Most recent draft for this ticket
+            drafts = (
+                session.query(DraftEvent)
+                .filter(DraftEvent.ticket_id == local_id)
+                .order_by(desc(DraftEvent.created_at))
+                .all()
+            )
+            latest_draft = drafts[0] if drafts else None
+
+            # All replies, ordered by time for first-outbound detection
+            replies = (
+                session.query(TicketReply)
+                .filter(TicketReply.ticket_id == local_id)
+                .order_by(TicketReply.created_at.asc())
+>>>>>>> claude/remove-draft-button-glI07
                 .all()
             )
 
             status_changes = (
                 session.query(TicketStatusChange)
+<<<<<<< HEAD
                 .filter(TicketStatusChange.ticket_id == ticket_id)
+=======
+                .filter(TicketStatusChange.ticket_id == local_id)
+>>>>>>> claude/remove-draft-button-glI07
                 .all()
             )
 
             outbound = [r for r in replies if r.direction == "outbound"]
             inbound = [r for r in replies if r.direction == "inbound"]
+<<<<<<< HEAD
 
             edited = any(r.edited is True for r in outbound)
 
@@ -862,29 +918,75 @@ def review_ticket(ticket_id):
                 for s in status_changes
             )
 
+=======
+            edited_count = sum(1 for r in outbound if r.edited is True)
+
+            # strategy = DraftEvent.mode (e.g. "template", "llm", "hybrid")
+            strategy = latest_draft.mode if latest_draft else None
+
+            # followup: >1 inbound replies after the first outbound
+            followup_detected = False
+            if outbound and inbound:
+                first_outbound_at = outbound[0].created_at
+                inbound_after = [r for r in inbound if r.created_at > first_outbound_at]
+                followup_detected = len(inbound_after) > 1
+
+            # reopened: any resolved/closed → open transition
+            reopened = any(
+                s.old_status in ("resolved", "closed") and s.new_status == "open"
+                for s in status_changes
+            )
+
+            # Lifecycle-computed risk category
+            confidence_val = latest_draft.confidence if latest_draft else None
+            if edited_count > 1 or reopened or (confidence_val is not None and confidence_val < 0.75):
+                risk_category = "high"
+            elif edited_count == 1:
+                risk_category = "medium"
+            else:
+                risk_category = "low"
+
+>>>>>>> claude/remove-draft-button-glI07
             return {
                 "success": True,
                 "ticket_id": ticket_id,
                 "draft_summary": {
                     "intent": latest_draft.intent if latest_draft else None,
+<<<<<<< HEAD
                     "confidence": latest_draft.confidence if latest_draft else None,
                     "risk_category": latest_draft.risk_category if latest_draft else None,
                     "strategy": latest_draft.strategy if latest_draft else None,
                     "llm_used": latest_draft.llm_used if latest_draft else False,
                     "edited": edited,
+=======
+                    "confidence": confidence_val,
+                    "risk_category": risk_category,
+                    "strategy": strategy,
+                    "llm_used": latest_draft.llm_used if latest_draft else False,
+                    "edited": edited_count > 0,
+>>>>>>> claude/remove-draft-button-glI07
                 },
                 "lifecycle": {
                     "outbound_count": len(outbound),
                     "inbound_count": len(inbound),
+<<<<<<< HEAD
                     "edited_count": sum(1 for r in outbound if r.edited is True),
                     "followup_detected": followup_detected,
                     "reopened": reopened,
                 },
+=======
+                    "edited_count": edited_count,
+                    "followup_detected": followup_detected,
+                    "reopened": reopened,
+                },
+                "kb_recommendations": [],
+>>>>>>> claude/remove-draft-button-glI07
             }
         finally:
             session.close()
 
     except Exception as e:
+<<<<<<< HEAD
         return {
             "success": True,
             "ticket_id": ticket_id,
@@ -904,6 +1006,10 @@ def review_ticket(ticket_id):
                 "reopened": False,
             },
         }
+=======
+        logger.error("review_ticket failed: %s", e)
+        return empty
+>>>>>>> claude/remove-draft-button-glI07
 
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False, port=5000)

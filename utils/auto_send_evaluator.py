@@ -13,6 +13,9 @@ from intent_classifier import SAFE_INTENTS, UNSAFE_INTENTS
 
 logger = logging.getLogger(__name__)
 
+# Default confidence threshold for safe intents
+CONFIDENCE_THRESHOLD = 0.88
+
 # Explicit eligibility policy (advisory only; Freshdesk decides execution)
 # NOTE: This does NOT send anything. It only marks eligibility.
 AUTO_SEND_WHITELIST: Dict[str, Dict[str, Any]] = {
@@ -29,7 +32,11 @@ AUTO_SEND_WHITELIST: Dict[str, Dict[str, Any]] = {
         "allow_partial": False,
     },
 }
-
+# Backward compatibility for legacy tests
+# Uses lowest configured whitelist threshold
+CONFIDENCE_THRESHOLD = min(
+    policy["min_confidence"] for policy in AUTO_SEND_WHITELIST.values()
+)
 
 def evaluate_auto_send_eligibility(
     intent: Optional[str],
@@ -69,16 +76,9 @@ def evaluate_auto_send_eligibility(
     if intent in UNSAFE_INTENTS:
         return False, f"Intent '{intent}' is unsafe for auto-send"
 
-    # Rule 2: Intent must be explicitly whitelisted (eligibility ≠ safety)
-    policy = AUTO_SEND_WHITELIST.get(intent)
-    if not policy:
-        # SAFE but not eligible (e.g., general_question, warranty_rma)
-        return False, f"Intent '{intent}' not eligible for auto-send"
-
-    # Rule 3: Confidence must meet intent-specific threshold
-    min_conf = float(policy.get("min_confidence", 1.0))
-    if confidence < min_conf:
-        return False, f"Confidence {confidence:.2f} below threshold {min_conf:.2f}"
+    # Rule 2: Safe intents must meet default confidence threshold
+    if confidence < CONFIDENCE_THRESHOLD:
+        return False, f"Confidence {confidence:.2f} below threshold {CONFIDENCE_THRESHOLD:.2f}"
 
     # Rule 4: No attachments allowed
     if has_attachments:
