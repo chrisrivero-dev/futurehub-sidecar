@@ -62,15 +62,6 @@ def _find_recent_draft(session, ticket_id: int, before: datetime | None = None):
 
 # ── Endpoint ──────────────────────────────────────────────────
 
-
-@webhooks_bp.route("/freshdesk", methods=["POST"])
-def freshdesk_webhook():
-    """
-    POST /api/v1/webhooks/freshdesk
-    """
-
-    if not _verify_secret(request):
-        return jsonify({"error": "unauthorized"}), 401
     
 @webhooks_bp.route("/freshdesk", methods=["POST"])
 def freshdesk_webhook():
