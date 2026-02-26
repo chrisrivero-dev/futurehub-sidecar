@@ -83,14 +83,61 @@ def freshdesk_webhook():
     if not _verify_secret(request):
         return jsonify({"error": "unauthorized"}), 401
 
-    body = request.get_json(silent=True) or {}
-    event_type = body.get("event_type")
-    fd_ticket_id = body.get("freshdesk_ticket_id")
-    fd_domain = body.get("freshdesk_domain")
-    data = body.get("data") or {}
+    import json
+# ...keep existing imports...
 
-    if not event_type or not fd_ticket_id or not fd_domain:
-        return jsonify({"error": "missing event_type, freshdesk_ticket_id, or freshdesk_domain"}), 400
+# inside freshdesk_webhook():
+
+raw_body = request.get_data(as_text=True) or ""
+
+body = request.get_json(silent=True)
+if not isinstance(body, dict):
+    body = {}
+
+# If Freshdesk sent text/plain or form-encoded but the body is JSON, parse it.
+if not body and raw_body.strip().startswith("{"):
+    try:
+        body = json.loads(raw_body)
+    except Exception:
+        body = {}
+
+# If Freshdesk sent form data, accept that too.
+if not body and request.form:
+    body = request.form.to_dict(flat=True)
+
+event_type = body.get("event_type") or body.get("event") or body.get("type")
+
+fd_ticket_id = (
+    body.get("freshdesk_ticket_id")
+    or body.get("ticket_id")
+    or body.get("ticketId")
+    or body.get("ticket")
+)
+
+fd_domain = (
+    body.get("freshdesk_domain")
+    or body.get("domain")
+    or body.get("freshdeskDomain")
+)
+
+data = body.get("data") or {}
+
+# If data came through as a JSON string, parse it.
+if isinstance(data, str) and data.strip().startswith("{"):
+    try:
+        data = json.loads(data)
+    except Exception:
+        data = {}
+
+# Hard-stop retries: never 400 for missing fields.
+if not event_type or not fd_ticket_id or not fd_domain:
+    logger.warning(
+        "Webhook missing fields. content_type=%s raw=%r parsed=%r",
+        request.content_type,
+        raw_body[:500],
+        body,
+    )
+    return jsonify({"ok": True, "swallowed_error": True, "error": "missing required fields"}), 200
 
     session = None
     try:
