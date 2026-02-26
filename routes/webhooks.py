@@ -82,7 +82,23 @@ def freshdesk_webhook():
     """
     if not _verify_secret(request):
         return jsonify({"error": "unauthorized"}), 401
+    
+@webhooks_bp.route("/freshdesk", methods=["POST"])
+def freshdesk_webhook():
+    if not _verify_secret(request):
+        return jsonify({"error": "unauthorized"}), 401
 
+    # DEBUG: log raw incoming webhook payload (temporary)
+    try:
+        raw_body = request.get_data(as_text=True) or ""
+        print("[WEBHOOK] content_type=", request.content_type, flush=True)
+        print("[WEBHOOK] raw_body=", raw_body[:2000], flush=True)
+        print("[WEBHOOK] json=", request.get_json(silent=True), flush=True)
+    except Exception as e:
+        print("[WEBHOOK] logging_failed=", str(e), flush=True)
+
+    import json
+    # ... existing logic below ...
     body = request.get_json(silent=True) or {}
     event_type = body.get("event_type")
     fd_ticket_id = body.get("freshdesk_ticket_id")
