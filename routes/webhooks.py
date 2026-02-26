@@ -71,41 +71,27 @@ def freshdesk_webhook():
 
     if not _verify_secret(request):
         return jsonify({"error": "unauthorized"}), 401
+    
+@webhooks_bp.route("/freshdesk", methods=["POST"])
+def freshdesk_webhook():
+    if not _verify_secret(request):
+        return jsonify({"error": "unauthorized"}), 401
+
+    # DEBUG: log raw incoming webhook payload (temporary)
+    try:
+        raw_body = request.get_data(as_text=True) or ""
+        print("[WEBHOOK] content_type=", request.content_type, flush=True)
+        print("[WEBHOOK] raw_body=", raw_body[:2000], flush=True)
+        print("[WEBHOOK] json=", request.get_json(silent=True), flush=True)
+    except Exception as e:
+        print("[WEBHOOK] logging_failed=", str(e), flush=True)
 
     import json
-
-    raw_body = request.get_data(as_text=True) or ""
-
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        body = {}
-
-    # Handle JSON sent as text/plain
-    if not body and raw_body.strip().startswith("{"):
-        try:
-            body = json.loads(raw_body)
-        except Exception:
-            body = {}
-
-    # Handle form encoded payloads
-    if not body and request.form:
-        body = request.form.to_dict(flat=True)
-
-    event_type = body.get("event_type") or body.get("event") or body.get("type")
-
-    fd_ticket_id = (
-        body.get("freshdesk_ticket_id")
-        or body.get("ticket_id")
-        or body.get("ticketId")
-        or body.get("ticket")
-    )
-
-    fd_domain = (
-        body.get("freshdesk_domain")
-        or body.get("domain")
-        or body.get("freshdeskDomain")
-    )
-
+    # ... existing logic below ...
+    body = request.get_json(silent=True) or {}
+    event_type = body.get("event_type")
+    fd_ticket_id = body.get("freshdesk_ticket_id")
+    fd_domain = body.get("freshdesk_domain")
     data = body.get("data") or {}
 
     if isinstance(data, str) and data.strip().startswith("{"):
