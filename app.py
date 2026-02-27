@@ -818,11 +818,15 @@ def freshdesk_webhook():
         session.close()
 @app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
 
-
 def review_ticket(ticket_id):
+    from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
+    from db import SessionLocal
+    from sqlalchemy import desc
+
     session = SessionLocal()
     try:
-        ticket = session.query(Ticket).filter_by(id=ticket_id).first()
+        # Resolve freshdesk ticket_id to local DB id
+        ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
         if not ticket:
             return {
                 "success": True,
@@ -831,199 +835,86 @@ def review_ticket(ticket_id):
                 "lifecycle": {},
                 "kb_recommendations": [],
             }
+        
+        local_id = ticket.id
 
-        outbound_count = session.query(func.count(TicketReply.id)).filter_by(
-            ticket_id=ticket_id,
-            direction="outbound"
-        ).scalar() or 0
+        # Get the most recent draft
+        drafts = (
+            session.query(DraftEvent)
+            .filter(DraftEvent.ticket_id == local_id)
+            .order_by(desc(DraftEvent.created_at))
+            .all()
+        )
+        latest_draft = drafts[0] if drafts else None
 
-        inbound_count = session.query(func.count(TicketReply.id)).filter_by(
-            ticket_id=ticket_id,
-            direction="inbound"
-        ).scalar() or 0
+        # Get all replies ordered by time to track the conversation flow
+        replies = (
+            session.query(TicketReply)
+            .filter(TicketReply.ticket_id == local_id)
+            .order_by(TicketReply.created_at.asc())
+            .all()
+        )
 
-        edited_count = session.query(func.count(TicketReply.id)).filter_by(
-            ticket_id=ticket_id,
-            edited=True
-        ).scalar() or 0
+        inbound_count = 0
+        outbound_count = 0
+        edited_count = 0
+        followup_detected = False
+        first_outbound_seen = False
 
-        reopened_count = session.query(func.count(TicketStatusChange.id)).filter_by(
-            ticket_id=ticket_id,
-            new_status="open"
-        ).scalar() or 0
+        # Single pass through replies to calculate metrics
+        for r in replies:
+            if r.direction == "outbound":
+                outbound_count += 1
+                first_outbound_seen = True
+                if r.edited:
+                    edited_count += 1
+            
+            elif r.direction == "inbound":
+                inbound_count += 1
+                # If we see an inbound after an outbound, it's a customer follow-up
+                if first_outbound_seen:
+                    followup_detected = True
+                    first_outbound_seen = False
+
+        # Check for re-open events
+        status_changes = (
+            session.query(TicketStatusChange)
+            .filter(TicketStatusChange.ticket_id == local_id)
+            .all()
+        )
+
+        reopened = any(
+            sc.new_status in ("open", "pending") and sc.old_status == "resolved"
+            for sc in status_changes
+        )
 
         return {
             "success": True,
             "ticket_id": ticket_id,
             "draft_summary": {
-                "intent": None,
-                "confidence": None,
-                "risk_category": None,
-                "strategy": None,
-                "llm_used": False,
+                "intent": getattr(latest_draft, 'intent', None),
+                "confidence": getattr(latest_draft, 'confidence', None),
+                "risk_category": getattr(latest_draft, 'risk_category', None),
+                "strategy": getattr(latest_draft, 'strategy', None),
+                "llm_used": latest_draft is not None,
                 "edited": edited_count > 0,
             },
             "lifecycle": {
                 "outbound_count": outbound_count,
                 "inbound_count": inbound_count,
                 "edited_count": edited_count,
-                "followup_detected": inbound_count > 0,
-                "reopened": reopened_count > 0,
+                "followup_detected": followup_detected,
+                "reopened": reopened,
             },
             "kb_recommendations": [],
         }
 
+    except Exception as e:
+        print(f"Error: {e}")
+        return {"success": False, "error": str(e)}
     finally:
         session.close()
 
-    try:
-        from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
-        from db import SessionLocal
-        from sqlalchemy import desc
-
-        session = SessionLocal()
-        try:
-            # Resolve freshdesk ticket_id to local DB id
-            ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
-            if not ticket:
-                return empty
-            local_id = ticket.id
-
-            # Most recent draft for this ticket
-            drafts = (
-                session.query(DraftEvent)
-                .filter(DraftEvent.ticket_id == local_id)
-                .order_by(desc(DraftEvent.created_at))
-                .all()
-            )
-            latest_draft = drafts[0] if drafts else None
-
-            # All replies, ordered by time for first-outbound detection
-            replies = (
-                session.query(TicketReply)
-                .filter(TicketReply.ticket_id == local_id)
-                .order_by(TicketReply.created_at.asc())
-                .all()
-            )
-            # --- Lifecycle Aggregation ---
-
-outbound_count = 0
-inbound_count = 0
-edited_count = 0
-followup_detected = False
-
-first_outbound_seen = False
-
-for r in replies:
-    if r.direction == "outbound":
-        outbound_count += 1
-        first_outbound_seen = True
-        if r.edited:
-            edited_count += 1
-
-    elif r.direction == "inbound":
-        inbound_count += 1
-        # inbound after an outbound = followup
-        if first_outbound_seen:
-            followup_detected = True
-
-# Status changes (reopen detection)
-status_changes = (
-    session.query(TicketStatusChange)
-    .filter(TicketStatusChange.ticket_id == local_id)
-    .all()
-)
-
-reopened = any(
-    sc.new_status in ("open", "pending") and sc.old_status == "resolved"
-    for sc in status_changes
-)
-
-# Draft summary (minimal but real)
-draft_summary = {
-    "intent": getattr(latest_draft, "intent", None),
-    "confidence": getattr(latest_draft, "confidence", None),
-    "risk_category": getattr(latest_draft, "risk_category", None),
-    "strategy": getattr(latest_draft, "strategy", None),
-    "llm_used": bool(latest_draft),
-    "edited": edited_count > 0,
-}
-
-return {
-    "success": True,
-    "ticket_id": ticket_id,
-    "draft_summary": draft_summary,
-    "lifecycle": {
-        "outbound_count": outbound_count,
-        "inbound_count": inbound_count,
-        "edited_count": edited_count,
-        "followup_detected": followup_detected,
-        "reopened": reopened,
-    },
-    "kb_recommendations": [],
-}
-
-            status_changes = (
-                session.query(TicketStatusChange)
-                .filter(TicketStatusChange.ticket_id == local_id)
-                .all()
-            )
-
-            outbound = [r for r in replies if r.direction == "outbound"]
-            inbound = [r for r in replies if r.direction == "inbound"]
-            edited_count = sum(1 for r in outbound if r.edited is True)
-
-            # strategy = DraftEvent.mode (e.g. "template", "llm", "hybrid")
-            strategy = latest_draft.mode if latest_draft else None
-
-            # followup: >1 inbound replies after the first outbound
-            followup_detected = False
-            if outbound and inbound:
-                first_outbound_at = outbound[0].created_at
-                inbound_after = [r for r in inbound if r.created_at > first_outbound_at]
-                followup_detected = len(inbound_after) > 1
-
-            # reopened: any resolved/closed → open transition
-            reopened = any(
-                s.old_status in ("resolved", "closed") and s.new_status == "open"
-                for s in status_changes
-            )
-
-            # Lifecycle-computed risk category
-            confidence_val = latest_draft.confidence if latest_draft else None
-            if edited_count > 1 or reopened or (confidence_val is not None and confidence_val < 0.75):
-                risk_category = "high"
-            elif edited_count == 1:
-                risk_category = "medium"
-            else:
-                risk_category = "low"
-
-            return {
-                "success": True,
-                "ticket_id": ticket_id,
-                "draft_summary": {
-                    "intent": latest_draft.intent if latest_draft else None,
-                    "confidence": confidence_val,
-                    "risk_category": risk_category,
-                    "strategy": strategy,
-                    "llm_used": latest_draft.llm_used if latest_draft else False,
-                    "edited": edited_count > 0,
-                },
-                "lifecycle": {
-                    "outbound_count": len(outbound),
-                    "inbound_count": len(inbound),
-                    "edited_count": edited_count,
-                    "followup_detected": followup_detected,
-                    "reopened": reopened,
-                },
-                "kb_recommendations": [],
-            }
-        finally:
-            session.close()
-
-    except Exception as e:
-        logger.error("review_ticket failed: %s", e)
-        return empty
 
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False, port=5000)
