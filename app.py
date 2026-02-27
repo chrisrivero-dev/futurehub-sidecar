@@ -55,6 +55,24 @@ app.register_blueprint(webhooks_bp)
 
 logger = logging.getLogger(__name__)
 
+
+@app.route("/debug/db-url")
+def debug_db_url():
+    from db import DATABASE_URL
+    return {"DATABASE_URL": DATABASE_URL}
+
+@app.route("/debug/reply-count")
+def debug_reply_count():
+    from models import TicketReply
+    from db import SessionLocal
+
+    session = SessionLocal()
+    try:
+        count = session.query(TicketReply).count()
+        return {"reply_count": count}
+    finally:
+        session.close()
+
 @app.route("/sidecar/", methods=["GET"])
 def sidecar_page():
     return render_template("ai_sidecar.html"), 200
