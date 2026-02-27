@@ -31,6 +31,7 @@ from audit.events import emit_event
 from db import SessionLocal, safe_commit
 from flask import Flask, request, jsonify, render_template  # ensure render_template is here
 from routes.webhooks import webhooks_bp
+from sqlalchemy import func
 
 # =========================
 # App Initialization
@@ -817,7 +818,6 @@ def freshdesk_webhook():
         session.close()
 @app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
 
-from sqlalchemy import func
 
 def review_ticket(ticket_id):
     session = SessionLocal()
