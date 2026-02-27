@@ -196,11 +196,14 @@ def _handle_customer_replied(session, ticket, data):
     Inbound customer reply on a ticket.
     Stored as-is. Analytics query determines if it constitutes a follow-up.
     """
-    conv_id = data.get("conversation_id")
-    body = data.get("body") or ""
+    conv_id = data.get("conversation_id") or "0"
+    sent_body = data.get("body") or ""
 
-    if not conv_id:
-        return {"skipped": "missing conversation_id"}
+    # TEMP: allow empty conversation_id for debugging
+    try:
+        conv_id = int(conv_id)
+    except (TypeError, ValueError):
+        conv_id = 0
 
     existing = session.query(TicketReply).filter_by(freshdesk_conversation_id=int(conv_id)).first()
     if existing:
