@@ -101,17 +101,36 @@ def freshdesk_webhook():
         )
         return jsonify({"ok": True, "swallowed_error": True}), 200
 
-    # ---- YOUR EXISTING LOGIC CONTINUES BELOW ----
+ 
+    # Normalize/force domain
+    fd_domain = fd_domain or "ccrypto8391.freshdesk.com"
 
-    session = None
+    session = SessionLocal()
+    t0 = perf_counter()
+
     try:
-        session = SessionLocal()
-        t0 = perf_counter()
+        # Ensure Ticket row exists (idempotent)
+        ticket = session.query(Ticket).filter_by(
+            freshdesk_ticket_id=str(fd_ticket_id),
+            freshdesk_domain=fd_domain
+        ).first()
 
-        t1 = perf_counter()
-        ticket = get_or_create_ticket(session, int(fd_ticket_id), fd_domain)
-        logger.info("webhook:get_or_create_ticket ms=%d", int((perf_counter() - t1) * 1000))
+        if not ticket:
+            ticket = Ticket(
+                freshdesk_ticket_id=str(fd_ticket_id),
+                freshdesk_domain=fd_domain
+            )
+            session.add(ticket)
+            session.flush()  # ensures ticket.id is available
 
+        logger.info(
+            "[WEBHOOK] event=%s fd_ticket_id=%s local_ticket_id=%s",
+            event_type,
+            fd_ticket_id,
+            ticket.id
+        )
+
+        # Route to correct handler
         if event_type == "reply_sent":
             result = _handle_reply_sent(session, ticket, data)
         elif event_type == "customer_replied":
@@ -121,29 +140,22 @@ def freshdesk_webhook():
         else:
             return jsonify({"error": f"unknown event_type: {event_type}"}), 400
 
-        t2 = perf_counter()
         safe_commit(session)
-        logger.info("webhook:safe_commit ms=%d", int((perf_counter() - t2) * 1000))
 
-        logger.info("webhook:total ms=%d", int((perf_counter() - t0) * 1000))
+        logger.info(
+            "webhook:total ms=%d",
+            int((perf_counter() - t0) * 1000)
+        )
+
         return jsonify({"ok": True, **result}), 200
 
     except Exception as e:
-        try:
-            if session is not None:
-                session.rollback()
-        except Exception:
-            pass
-
-        logger.error("Webhook processing failed (non-fatal): %s", e, exc_info=True)
-        return jsonify({"ok": True, "swallowed_error": True}), 200
+        session.rollback()
+        raise
 
     finally:
-        try:
-            if session is not None:
-                session.close()
-        except Exception:
-            pass
+        session.close()
+ 
 
 
 # ── Handlers ──────────────────────────────────────────────────
