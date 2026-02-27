@@ -816,27 +816,65 @@ def freshdesk_webhook():
     finally:
         session.close()
 @app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
+
+from sqlalchemy import func
+
 def review_ticket(ticket_id):
-    empty = {
-        "success": True,
-        "ticket_id": ticket_id,
-        "draft_summary": {
-            "intent": None,
-            "confidence": None,
-            "risk_category": None,
-            "strategy": None,
-            "llm_used": False,
-            "edited": False,
-        },
-        "lifecycle": {
-            "outbound_count": 0,
-            "inbound_count": 0,
-            "edited_count": 0,
-            "followup_detected": False,
-            "reopened": False,
-        },
-        "kb_recommendations": [],
-    }
+    session = SessionLocal()
+    try:
+        ticket = session.query(Ticket).filter_by(id=ticket_id).first()
+        if not ticket:
+            return {
+                "success": True,
+                "ticket_id": ticket_id,
+                "draft_summary": {},
+                "lifecycle": {},
+                "kb_recommendations": [],
+            }
+
+        outbound_count = session.query(func.count(TicketReply.id)).filter_by(
+            ticket_id=ticket_id,
+            direction="outbound"
+        ).scalar() or 0
+
+        inbound_count = session.query(func.count(TicketReply.id)).filter_by(
+            ticket_id=ticket_id,
+            direction="inbound"
+        ).scalar() or 0
+
+        edited_count = session.query(func.count(TicketReply.id)).filter_by(
+            ticket_id=ticket_id,
+            edited=True
+        ).scalar() or 0
+
+        reopened_count = session.query(func.count(TicketStatusChange.id)).filter_by(
+            ticket_id=ticket_id,
+            new_status="open"
+        ).scalar() or 0
+
+        return {
+            "success": True,
+            "ticket_id": ticket_id,
+            "draft_summary": {
+                "intent": None,
+                "confidence": None,
+                "risk_category": None,
+                "strategy": None,
+                "llm_used": False,
+                "edited": edited_count > 0,
+            },
+            "lifecycle": {
+                "outbound_count": outbound_count,
+                "inbound_count": inbound_count,
+                "edited_count": edited_count,
+                "followup_detected": inbound_count > 0,
+                "reopened": reopened_count > 0,
+            },
+            "kb_recommendations": [],
+        }
+
+    finally:
+        session.close()
 
     try:
         from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
@@ -867,6 +905,63 @@ def review_ticket(ticket_id):
                 .order_by(TicketReply.created_at.asc())
                 .all()
             )
+            # --- Lifecycle Aggregation ---
+
+outbound_count = 0
+inbound_count = 0
+edited_count = 0
+followup_detected = False
+
+first_outbound_seen = False
+
+for r in replies:
+    if r.direction == "outbound":
+        outbound_count += 1
+        first_outbound_seen = True
+        if r.edited:
+            edited_count += 1
+
+    elif r.direction == "inbound":
+        inbound_count += 1
+        # inbound after an outbound = followup
+        if first_outbound_seen:
+            followup_detected = True
+
+# Status changes (reopen detection)
+status_changes = (
+    session.query(TicketStatusChange)
+    .filter(TicketStatusChange.ticket_id == local_id)
+    .all()
+)
+
+reopened = any(
+    sc.new_status in ("open", "pending") and sc.old_status == "resolved"
+    for sc in status_changes
+)
+
+# Draft summary (minimal but real)
+draft_summary = {
+    "intent": getattr(latest_draft, "intent", None),
+    "confidence": getattr(latest_draft, "confidence", None),
+    "risk_category": getattr(latest_draft, "risk_category", None),
+    "strategy": getattr(latest_draft, "strategy", None),
+    "llm_used": bool(latest_draft),
+    "edited": edited_count > 0,
+}
+
+return {
+    "success": True,
+    "ticket_id": ticket_id,
+    "draft_summary": draft_summary,
+    "lifecycle": {
+        "outbound_count": outbound_count,
+        "inbound_count": inbound_count,
+        "edited_count": edited_count,
+        "followup_detected": followup_detected,
+        "reopened": reopened,
+    },
+    "kb_recommendations": [],
+}
 
             status_changes = (
                 session.query(TicketStatusChange)
