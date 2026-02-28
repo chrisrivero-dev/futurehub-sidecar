@@ -902,10 +902,41 @@ def review_ticket(ticket_id):
                 risk_category = "medium"
             else:
                 risk_category = "low"
+            # ----------------------------------------
+            # Freshdesk API data (for stateless asset)
+            # ----------------------------------------
+
+            fd_ticket = _fetch_freshdesk_ticket(ticket_id)
+            fd_conversations = _fetch_freshdesk_conversations(ticket_id)
+
+            subject = (
+                (fd_ticket.get("subject") if fd_ticket else None)
+                or (latest_draft.subject if latest_draft else None)
+                or ""
+            )
+
+            original_message = (
+                (fd_ticket.get("description_text") if fd_ticket else None)
+                or ""
+            )
+
+            final_reply = ""
+            if fd_conversations:
+                for conv in reversed(fd_conversations):
+                    if conv.get("incoming") is False:
+                        final_reply = (
+                            conv.get("body_text")
+                            or conv.get("body")
+                            or ""
+                        )
+                        break
 
             return {
                 "success": True,
                 "ticket_id": ticket_id,
+                "subject": subject,
+                "original_message": original_message,
+                "final_reply": final_reply,
                 "draft_summary": {
                     "intent": latest_draft.intent if latest_draft else None,
                     "confidence": confidence_val,
@@ -923,13 +954,6 @@ def review_ticket(ticket_id):
                 },
                 "kb_recommendations": [],
             }
-        finally:
-            session.close()
-
-    except Exception as e:
-        logger.error("review_ticket failed: %s", e)
-        return empty
-
 
 # ==========================================================
 # KB Draft Generation
