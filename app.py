@@ -930,5 +930,133 @@ def review_ticket(ticket_id):
         logger.error("review_ticket failed: %s", e)
         return empty
 
+
+# ==========================================================
+# KB Draft Generation
+# POST /api/v1/kb/generate
+# ==========================================================
+
+def generate_kb_draft(session, ticket_id: int) -> dict:
+    """
+    Build a structured KB article from ticket lifecycle data.
+
+    Pulls the ticket subject, all replies, the latest outbound reply metadata,
+    and the DraftEvent intent, then asks the LLM to produce a JSON KB article.
+
+    Returns the parsed JSON dict or raises on failure.
+    """
+    from models import Ticket, DraftEvent, TicketReply
+    from sqlalchemy import desc
+
+    ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
+    if not ticket:
+        raise ValueError(f"Ticket {ticket_id} not found")
+
+    local_id = ticket.id
+
+    # Most recent draft for intent / subject
+    latest_draft = (
+        session.query(DraftEvent)
+        .filter(DraftEvent.ticket_id == local_id)
+        .order_by(desc(DraftEvent.created_at))
+        .first()
+    )
+
+    # All replies ordered chronologically
+    replies = (
+        session.query(TicketReply)
+        .filter(TicketReply.ticket_id == local_id)
+        .order_by(TicketReply.created_at.asc())
+        .all()
+    )
+
+    outbound = [r for r in replies if r.direction == "outbound"]
+    inbound = [r for r in replies if r.direction == "inbound"]
+
+    subject = latest_draft.subject if latest_draft else f"Ticket #{ticket_id}"
+    intent = latest_draft.intent if latest_draft else "unknown"
+
+    # Build context for the LLM
+    context_lines = [
+        f"Ticket Subject: {subject}",
+        f"Classified Intent: {intent}",
+        f"Customer messages: {len(inbound)}",
+        f"Agent replies: {len(outbound)}",
+    ]
+
+    if outbound:
+        last_out = outbound[-1]
+        context_lines.append(f"Final agent reply length: {last_out.body_length or 'unknown'} chars")
+        context_lines.append(f"Final reply was edited: {last_out.edited or False}")
+
+    if latest_draft:
+        context_lines.append(f"Draft strategy: {latest_draft.mode or 'unknown'}")
+        context_lines.append(f"LLM was used: {latest_draft.llm_used}")
+        if latest_draft.confidence is not None:
+            context_lines.append(f"Confidence: {latest_draft.confidence:.2f}")
+
+    ticket_context = "\n".join(context_lines)
+
+    from ai.llm_client import generate_llm_response
+
+    system_prompt = (
+        "You are a knowledge base article generator for a support team. "
+        "Given ticket resolution context, produce a structured KB article. "
+        "Respond with ONLY valid JSON matching this exact schema:\n"
+        '{"title": "", "summary": "", "symptoms": [], "cause": "", '
+        '"resolution_steps": [], "related_tags": []}\n'
+        "Do not include markdown fences or any text outside the JSON object."
+    )
+
+    user_message = (
+        f"Generate a KB article from this resolved support ticket:\n\n"
+        f"{ticket_context}\n\n"
+        f"Infer symptoms from the subject and intent. "
+        f"Infer cause and resolution steps from the intent and agent reply pattern. "
+        f"Generate 2-4 related tags based on the topic."
+    )
+
+    llm_result = generate_llm_response(
+        system_prompt=system_prompt,
+        user_message=user_message,
+    )
+
+    import json
+    raw = llm_result.get("text", "").strip()
+    # Strip markdown fences if present
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1]
+    if raw.endswith("```"):
+        raw = raw.rsplit("```", 1)[0]
+    raw = raw.strip()
+
+    return json.loads(raw)
+
+
+@app.route("/api/v1/kb/generate", methods=["POST"])
+def kb_generate():
+    from db import SessionLocal
+
+    data = request.get_json(silent=True)
+    if not data or not data.get("ticket_id"):
+        return jsonify({"success": False, "error": "ticket_id is required"}), 400
+
+    ticket_id = data["ticket_id"]
+    if not isinstance(ticket_id, int):
+        return jsonify({"success": False, "error": "ticket_id must be an integer"}), 400
+
+    session = SessionLocal()
+    try:
+        article = generate_kb_draft(session, ticket_id)
+        return jsonify({"success": True, "ticket_id": ticket_id, "article": article})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        logger.error("KB generation failed for ticket %s: %s", ticket_id, e)
+        return jsonify({"success": False, "error": "KB generation failed"}), 500
+    finally:
+        session.close()
+
+
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False, port=5000)
