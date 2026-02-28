@@ -824,8 +824,21 @@ def review_ticket(ticket_id):
         "subject": "",
         "original_message": "",
         "final_reply": "",
-        "draft_summary": {},
-        "lifecycle": {},
+        "draft_summary": {
+            "intent": None,
+            "confidence": None,
+            "risk_category": None,
+            "strategy": None,
+            "llm_used": False,
+            "edited": False,
+        },
+        "lifecycle": {
+            "outbound_count": 0,
+            "inbound_count": 0,
+            "edited_count": 0,
+            "followup_detected": False,
+            "reopened": False,
+        },
         "kb_recommendations": [],
     }
 
@@ -836,11 +849,8 @@ def review_ticket(ticket_id):
 
         session = SessionLocal()
         try:
-            # Resolve freshdesk ticket_id to local DB id
-            ticket = session.query(Ticket).filter_by(
-                freshdesk_ticket_id=ticket_id
-            ).first()
-
+            # Resolve freshdesk ticket_id -> local DB id
+            ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
             if not ticket:
                 return empty
 
@@ -870,32 +880,24 @@ def review_ticket(ticket_id):
 
             outbound = [r for r in replies if r.direction == "outbound"]
             inbound = [r for r in replies if r.direction == "inbound"]
-
             edited_count = sum(1 for r in outbound if r.edited is True)
 
             strategy = latest_draft.mode if latest_draft else None
-            confidence_val = latest_draft.confidence if latest_draft else None
 
-            # Follow-up detection
+            # followup: inbound replies after first outbound
             followup_detected = False
             if outbound and inbound:
                 first_outbound_at = outbound[0].created_at
-                inbound_after = [
-                    r for r in inbound if r.created_at > first_outbound_at
-                ]
+                inbound_after = [r for r in inbound if r.created_at > first_outbound_at]
                 followup_detected = len(inbound_after) > 1
 
-            # Reopened detection
             reopened = any(
-                s.old_status in ("resolved", "closed")
-                and s.new_status == "open"
+                s.old_status in ("resolved", "closed") and s.new_status == "open"
                 for s in status_changes
             )
 
-            # Risk category
-            if edited_count > 1 or reopened or (
-                confidence_val is not None and confidence_val < 0.75
-            ):
+            confidence_val = latest_draft.confidence if latest_draft else None
+            if edited_count > 1 or reopened or (confidence_val is not None and confidence_val < 0.75):
                 risk_category = "high"
             elif edited_count == 1:
                 risk_category = "medium"
@@ -903,9 +905,8 @@ def review_ticket(ticket_id):
                 risk_category = "low"
 
             # ----------------------------------------
-            # Freshdesk API data (stateless asset)
+            # Freshdesk API data (for stateless asset)
             # ----------------------------------------
-
             fd_ticket = _fetch_freshdesk_ticket(ticket_id)
             fd_conversations = _fetch_freshdesk_conversations(ticket_id)
 
@@ -917,6 +918,7 @@ def review_ticket(ticket_id):
 
             original_message = (
                 (fd_ticket.get("description_text") if fd_ticket else None)
+                or (fd_ticket.get("description") if fd_ticket else None)
                 or ""
             )
 
@@ -924,11 +926,7 @@ def review_ticket(ticket_id):
             if fd_conversations:
                 for conv in reversed(fd_conversations):
                     if conv.get("incoming") is False:
-                        final_reply = (
-                            conv.get("body_text")
-                            or conv.get("body")
-                            or ""
-                        )
+                        final_reply = (conv.get("body_text") or conv.get("body") or "")
                         break
 
             return {
@@ -954,7 +952,6 @@ def review_ticket(ticket_id):
                 },
                 "kb_recommendations": [],
             }
-
         finally:
             session.close()
 
@@ -1251,6 +1248,8 @@ def generate_support_asset(ticket_id: int) -> str:
         session.close()
 
     # -- Freshdesk API data (using freshdesk_ticket_id) --
+    freshdesk_tid = ticket.freshdesk_ticket_id
+
     fd_ticket = _fetch_freshdesk_ticket(freshdesk_tid)
     fd_conversations = _fetch_freshdesk_conversations(freshdesk_tid)
 
