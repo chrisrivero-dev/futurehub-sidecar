@@ -16,6 +16,7 @@ from flask import Blueprint, jsonify, request
 
 from db import SessionLocal, safe_commit
 from models import (
+    Ticket,  
     DraftEvent,
     TicketReply,
     TicketStatusChange,
