@@ -903,9 +903,31 @@ def review_ticket(ticket_id):
             else:
                 risk_category = "low"
 
+            # Fetch text content from Freshdesk API
+            fd_ticket = _fetch_freshdesk_ticket(ticket_id)
+            fd_conversations = _fetch_freshdesk_conversations(ticket_id)
+
+            subject = (
+                (fd_ticket.get("subject") if fd_ticket else None)
+                or (latest_draft.subject if latest_draft else None)
+                or ""
+            )
+            original_message = (
+                (fd_ticket.get("description_text") or fd_ticket.get("description") or "")
+                if fd_ticket else ""
+            )
+            final_reply = ""
+            for conv in reversed(fd_conversations):
+                if conv.get("incoming") is False:
+                    final_reply = conv.get("body_text") or conv.get("body") or ""
+                    break
+
             return {
                 "success": True,
                 "ticket_id": ticket_id,
+                "subject": subject,
+                "original_message": original_message,
+                "final_reply": final_reply,
                 "draft_summary": {
                     "intent": latest_draft.intent if latest_draft else None,
                     "confidence": confidence_val,
