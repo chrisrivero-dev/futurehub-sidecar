@@ -817,13 +817,18 @@ def freshdesk_webhook():
     finally:
         session.close()
 @app.route("/api/v1/tickets/<int:ticket_id>/review", methods=["GET"])
-
 def review_ticket(ticket_id):
-    from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
-    from db import SessionLocal
-    from sqlalchemy import desc
+    empty = {
+        "success": True,
+        "ticket_id": ticket_id,
+        "subject": "",
+        "original_message": "",
+        "final_reply": "",
+        "draft_summary": {},
+        "lifecycle": {},
+        "kb_recommendations": [],
+    }
 
-    session = SessionLocal()
     try:
         from models import Ticket, DraftEvent, TicketReply, TicketStatusChange
         from db import SessionLocal
@@ -832,21 +837,24 @@ def review_ticket(ticket_id):
         session = SessionLocal()
         try:
             # Resolve freshdesk ticket_id to local DB id
-            ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
+            ticket = session.query(Ticket).filter_by(
+                freshdesk_ticket_id=ticket_id
+            ).first()
+
             if not ticket:
                 return empty
+
             local_id = ticket.id
 
-            # Most recent draft for this ticket
-            drafts = (
+            # Most recent draft
+            latest_draft = (
                 session.query(DraftEvent)
                 .filter(DraftEvent.ticket_id == local_id)
                 .order_by(desc(DraftEvent.created_at))
-                .all()
+                .first()
             )
-            latest_draft = drafts[0] if drafts else None
 
-            # All replies, ordered by time for first-outbound detection
+            # Replies
             replies = (
                 session.query(TicketReply)
                 .filter(TicketReply.ticket_id == local_id)
@@ -862,34 +870,40 @@ def review_ticket(ticket_id):
 
             outbound = [r for r in replies if r.direction == "outbound"]
             inbound = [r for r in replies if r.direction == "inbound"]
+
             edited_count = sum(1 for r in outbound if r.edited is True)
 
-            # strategy = DraftEvent.mode (e.g. "template", "llm", "hybrid")
             strategy = latest_draft.mode if latest_draft else None
+            confidence_val = latest_draft.confidence if latest_draft else None
 
-            # followup: >1 inbound replies after the first outbound
+            # Follow-up detection
             followup_detected = False
             if outbound and inbound:
                 first_outbound_at = outbound[0].created_at
-                inbound_after = [r for r in inbound if r.created_at > first_outbound_at]
+                inbound_after = [
+                    r for r in inbound if r.created_at > first_outbound_at
+                ]
                 followup_detected = len(inbound_after) > 1
 
-            # reopened: any resolved/closed → open transition
+            # Reopened detection
             reopened = any(
-                s.old_status in ("resolved", "closed") and s.new_status == "open"
+                s.old_status in ("resolved", "closed")
+                and s.new_status == "open"
                 for s in status_changes
             )
 
-            # Lifecycle-computed risk category
-            confidence_val = latest_draft.confidence if latest_draft else None
-            if edited_count > 1 or reopened or (confidence_val is not None and confidence_val < 0.75):
+            # Risk category
+            if edited_count > 1 or reopened or (
+                confidence_val is not None and confidence_val < 0.75
+            ):
                 risk_category = "high"
             elif edited_count == 1:
                 risk_category = "medium"
             else:
                 risk_category = "low"
+
             # ----------------------------------------
-            # Freshdesk API data (for stateless asset)
+            # Freshdesk API data (stateless asset)
             # ----------------------------------------
 
             fd_ticket = _fetch_freshdesk_ticket(ticket_id)
@@ -941,6 +955,12 @@ def review_ticket(ticket_id):
                 "kb_recommendations": [],
             }
 
+        finally:
+            session.close()
+
+    except Exception as e:
+        logger.error("review_ticket failed: %s", e)
+        return empty
 # ==========================================================
 # KB Draft Generation
 # POST /api/v1/kb/generate
