@@ -1102,13 +1102,93 @@ def _fetch_freshdesk_conversations(ticket_id: int) -> list:
     return []
 
 
+def generate_asset_from_text(
+    subject: str,
+    original_message: str,
+    final_reply: str,
+    intent: str | None = None,
+    confidence: float | None = None,
+) -> str:
+    """
+    Stateless support asset generator. No DB, no Freshdesk API.
+
+    Accepts structured text inputs and returns a fully formatted Markdown
+    support asset (KB article + canned response + tags) via LLM.
+    """
+    from ai.llm_client import generate_llm_response
+
+    context_parts = [f"Ticket Subject: {subject}"]
+    if original_message:
+        context_parts.append(f"Customer Message:\n{original_message[:2000]}")
+    if final_reply:
+        context_parts.append(f"Agent Resolution Reply:\n{final_reply[:2000]}")
+    if intent:
+        context_parts.append(f"Classified Intent: {intent}")
+    if confidence is not None:
+        context_parts.append(f"Confidence: {confidence:.2f}")
+
+    ticket_context = "\n\n".join(context_parts)
+
+    system_prompt = (
+        "You are a support asset generator for FutureBit, a Bitcoin mining hardware company. "
+        "Given a resolved support ticket, generate a complete support asset in Markdown format.\n\n"
+        "You MUST use this EXACT structure:\n\n"
+        "# SUPPORT ASSET DRAFT\n\n"
+        "## KB ARTICLE\n\n"
+        "**Title:** <descriptive title>\n\n"
+        "**Summary:** <1-2 sentence executive description of the issue and resolution>\n\n"
+        "**Body:**\n\n"
+        "### Symptoms\n"
+        "<bullet list of what the customer experiences>\n\n"
+        "### Root Cause\n"
+        "<clear explanation>\n\n"
+        "### Resolution Steps\n"
+        "<numbered list, escalating from basic to advanced>\n\n"
+        "### Advanced Troubleshooting\n"
+        "<additional steps if relevant, or omit section>\n\n"
+        "### When to Contact Support\n"
+        "<guidance on when to escalate>\n\n"
+        "### Warnings\n"
+        "<safety or data-loss risks if applicable, or omit section>\n\n"
+        "## CANNED RESPONSE\n\n"
+        "**Title:** <short canned response title>\n\n"
+        "**Message:**\n"
+        "<empathetic, concise message that:\n"
+        "- Acknowledges the issue\n"
+        "- References the KB article (use placeholder: [See KB Article: <title>])\n"
+        "- Asks 1-2 diagnostic clarification questions\n"
+        "- Uses calm, friendly, direct tone>\n\n"
+        "## TAGS\n"
+        "- <3-6 lowercase hyphen-separated tags reflecting symptom, cause, and operational use>\n\n"
+        "Rules:\n"
+        "- Do NOT hallucinate features FutureBit products don't have\n"
+        "- Do NOT invent specific firmware versions or URLs\n"
+        "- Do NOT use emojis or marketing language\n"
+        "- Keep the canned response under 150 words\n"
+        "- Tags must be lowercase, hyphenated, operationally useful\n"
+        "- Infer root cause only from the provided context\n"
+        "- Professional formatting, clean Markdown"
+    )
+
+    user_message = (
+        f"Generate a support asset from this resolved ticket:\n\n{ticket_context}"
+    )
+
+    llm_result = generate_llm_response(
+        system_prompt=system_prompt,
+        user_message=user_message,
+    )
+
+    return llm_result.get("text", "").strip()
+
+
 def generate_support_asset(ticket_id: int) -> str:
     """
     Generate a formatted Markdown support asset from a resolved ticket.
 
     Fetches ticket description and conversations from Freshdesk API,
-    pulls DraftEvent intent/confidence from DB, then uses the LLM
-    to produce a structured support asset (KB article + canned response + tags).
+    pulls DraftEvent intent/confidence from DB, then delegates to
+    the stateless generate_asset_from_text().
 
     Returns the Markdown string.
     """
@@ -1168,65 +1248,13 @@ def generate_support_asset(ticket_id: int) -> str:
             )
             break
 
-    # -- Build LLM prompt --
-    context_parts = [f"Ticket Subject: {ticket_subject}"]
-    if ticket_description:
-        context_parts.append(f"Customer Message:\n{ticket_description[:2000]}")
-    if latest_outbound_body:
-        context_parts.append(f"Agent Resolution Reply:\n{latest_outbound_body[:2000]}")
-    if intent:
-        context_parts.append(f"Classified Intent: {intent}")
-    if confidence is not None:
-        context_parts.append(f"Confidence: {confidence:.2f}")
-
-    ticket_context = "\n\n".join(context_parts)
-
-    from ai.llm_client import generate_llm_response
-
-    system_prompt = (
-        "You are a support asset generator for FutureBit, a Bitcoin mining hardware company. "
-        "Given a resolved support ticket, generate a complete support asset in Markdown format.\n\n"
-        "You MUST use this EXACT structure:\n\n"
-        "# SUPPORT ASSET DRAFT\n\n"
-        "## KB ARTICLE\n\n"
-        "**Title:** <descriptive title>\n\n"
-        "**Body:**\n"
-        "<article body with these sections:\n"
-        "- Symptoms (bullet list of what the customer experiences)\n"
-        "- Root Cause (clear explanation)\n"
-        "- Troubleshooting Steps (numbered, escalating from basic to advanced)\n"
-        "- Advanced Troubleshooting (if relevant)\n"
-        "- When to Contact Support (guidance on escalation)\n"
-        "- Warnings (if any safety or data-loss risks apply)>\n\n"
-        "## CANNED RESPONSE\n\n"
-        "**Title:** <short canned response title>\n\n"
-        "**Message:**\n"
-        "<empathetic, concise message that:\n"
-        "- Acknowledges the issue\n"
-        "- References the KB article\n"
-        "- Asks 1-2 diagnostic clarification questions\n"
-        "- Uses calm, friendly, direct tone>\n\n"
-        "## TAGS\n"
-        "- <symptom tag>\n"
-        "- <cause tag>\n"
-        "- <operational tag>\n\n"
-        "Rules:\n"
-        "- Do NOT hallucinate features FutureBit products don't have\n"
-        "- Do NOT invent specific firmware versions or URLs\n"
-        "- Keep the canned response under 150 words\n"
-        "- Tags must be lowercase, hyphenated, operationally useful"
+    return generate_asset_from_text(
+        subject=ticket_subject,
+        original_message=ticket_description,
+        final_reply=latest_outbound_body,
+        intent=intent,
+        confidence=confidence,
     )
-
-    user_message = (
-        f"Generate a support asset from this resolved ticket:\n\n{ticket_context}"
-    )
-
-    llm_result = generate_llm_response(
-        system_prompt=system_prompt,
-        user_message=user_message,
-    )
-
-    return llm_result.get("text", "").strip()
 
 
 @app.route("/api/v1/support-assets/generate", methods=["POST"])
@@ -1248,6 +1276,43 @@ def support_asset_generate():
         })
     except Exception as e:
         logger.error("Support asset generation failed for ticket %s: %s", ticket_id, e)
+        return jsonify({"success": False, "error": "Support asset generation failed"}), 500
+
+
+@app.route("/api/v1/support-assets/generate-from-text", methods=["POST"])
+def support_asset_generate_from_text():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "JSON body is required"}), 400
+
+    missing = [
+        f for f in ("subject", "original_message", "final_reply")
+        if not data.get(f) or not isinstance(data[f], str) or not data[f].strip()
+    ]
+    if missing:
+        return jsonify({
+            "success": False,
+            "error": f"Missing required fields: {', '.join(missing)}",
+            "missing_fields": missing,
+        }), 400
+
+    subject = data["subject"].strip()
+    original_message = data["original_message"].strip()
+    final_reply = data["final_reply"].strip()
+    intent = data.get("intent") if isinstance(data.get("intent"), str) else None
+    confidence = data.get("confidence") if isinstance(data.get("confidence"), (int, float)) else None
+
+    try:
+        asset_markdown = generate_asset_from_text(
+            subject=subject,
+            original_message=original_message,
+            final_reply=final_reply,
+            intent=intent,
+            confidence=confidence,
+        )
+        return jsonify({"success": True, "asset": asset_markdown})
+    except Exception as e:
+        logger.error("Stateless support asset generation failed: %s", e)
         return jsonify({"success": False, "error": "Support asset generation failed"}), 500
 
 
