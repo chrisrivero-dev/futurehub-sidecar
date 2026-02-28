@@ -1058,5 +1058,191 @@ def kb_generate():
         session.close()
 
 
+
+# ==========================================================
+# Support Asset Generator
+# POST /api/v1/support-assets/generate
+# ==========================================================
+
+def _fetch_freshdesk_ticket(ticket_id: int) -> dict | None:
+    """Fetch ticket data from Freshdesk API. Returns dict or None on failure."""
+    domain = os.environ.get("FRESHDESK_DOMAIN")
+    api_key = os.environ.get("FRESHDESK_API_KEY")
+    if not domain or not api_key:
+        return None
+    try:
+        resp = requests.get(
+            f"https://{domain}/api/v2/tickets/{ticket_id}",
+            auth=(api_key, "X"),
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as e:
+        logger.warning("Freshdesk ticket fetch failed: %s", e)
+    return None
+
+
+def _fetch_freshdesk_conversations(ticket_id: int) -> list:
+    """Fetch conversations (replies) for a ticket from Freshdesk API."""
+    domain = os.environ.get("FRESHDESK_DOMAIN")
+    api_key = os.environ.get("FRESHDESK_API_KEY")
+    if not domain or not api_key:
+        return []
+    try:
+        resp = requests.get(
+            f"https://{domain}/api/v2/tickets/{ticket_id}/conversations",
+            auth=(api_key, "X"),
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as e:
+        logger.warning("Freshdesk conversations fetch failed: %s", e)
+    return []
+
+
+def generate_support_asset(ticket_id: int) -> str:
+    """
+    Generate a formatted Markdown support asset from a resolved ticket.
+
+    Fetches ticket description and conversations from Freshdesk API,
+    pulls DraftEvent intent/confidence from DB, then uses the LLM
+    to produce a structured support asset (KB article + canned response + tags).
+
+    Returns the Markdown string.
+    """
+    from db import SessionLocal
+    from models import Ticket, DraftEvent
+    from sqlalchemy import desc
+
+    # -- Freshdesk API data --
+    fd_ticket = _fetch_freshdesk_ticket(ticket_id)
+    fd_conversations = _fetch_freshdesk_conversations(ticket_id)
+
+    ticket_description = ""
+    if fd_ticket:
+        ticket_description = (
+            fd_ticket.get("description_text")
+            or fd_ticket.get("description")
+            or ""
+        )
+    ticket_subject = fd_ticket.get("subject", f"Ticket #{ticket_id}") if fd_ticket else f"Ticket #{ticket_id}"
+
+    # Find latest outbound reply body from Freshdesk conversations
+    latest_outbound_body = ""
+    for conv in reversed(fd_conversations):
+        if conv.get("incoming") is False:
+            latest_outbound_body = (
+                conv.get("body_text")
+                or conv.get("body")
+                or ""
+            )
+            break
+
+    # -- DB data --
+    intent = None
+    confidence = None
+    session = SessionLocal()
+    try:
+        ticket_row = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
+        if ticket_row:
+            draft = (
+                session.query(DraftEvent)
+                .filter(DraftEvent.ticket_id == ticket_row.id)
+                .order_by(desc(DraftEvent.created_at))
+                .first()
+            )
+            if draft:
+                intent = draft.intent
+                confidence = draft.confidence
+                if not ticket_description:
+                    ticket_subject = draft.subject or ticket_subject
+    finally:
+        session.close()
+
+    # -- Build LLM prompt --
+    context_parts = [f"Ticket Subject: {ticket_subject}"]
+    if ticket_description:
+        context_parts.append(f"Customer Message:\n{ticket_description[:2000]}")
+    if latest_outbound_body:
+        context_parts.append(f"Agent Resolution Reply:\n{latest_outbound_body[:2000]}")
+    if intent:
+        context_parts.append(f"Classified Intent: {intent}")
+    if confidence is not None:
+        context_parts.append(f"Confidence: {confidence:.2f}")
+
+    ticket_context = "\n\n".join(context_parts)
+
+    from ai.llm_client import generate_llm_response
+
+    system_prompt = (
+        "You are a support asset generator for FutureBit, a Bitcoin mining hardware company. "
+        "Given a resolved support ticket, generate a complete support asset in Markdown format.\n\n"
+        "You MUST use this EXACT structure:\n\n"
+        "# SUPPORT ASSET DRAFT\n\n"
+        "## KB ARTICLE\n\n"
+        "**Title:** <descriptive title>\n\n"
+        "**Body:**\n"
+        "<article body with these sections:\n"
+        "- Symptoms (bullet list of what the customer experiences)\n"
+        "- Root Cause (clear explanation)\n"
+        "- Troubleshooting Steps (numbered, escalating from basic to advanced)\n"
+        "- Advanced Troubleshooting (if relevant)\n"
+        "- When to Contact Support (guidance on escalation)\n"
+        "- Warnings (if any safety or data-loss risks apply)>\n\n"
+        "## CANNED RESPONSE\n\n"
+        "**Title:** <short canned response title>\n\n"
+        "**Message:**\n"
+        "<empathetic, concise message that:\n"
+        "- Acknowledges the issue\n"
+        "- References the KB article\n"
+        "- Asks 1-2 diagnostic clarification questions\n"
+        "- Uses calm, friendly, direct tone>\n\n"
+        "## TAGS\n"
+        "- <symptom tag>\n"
+        "- <cause tag>\n"
+        "- <operational tag>\n\n"
+        "Rules:\n"
+        "- Do NOT hallucinate features FutureBit products don't have\n"
+        "- Do NOT invent specific firmware versions or URLs\n"
+        "- Keep the canned response under 150 words\n"
+        "- Tags must be lowercase, hyphenated, operationally useful"
+    )
+
+    user_message = (
+        f"Generate a support asset from this resolved ticket:\n\n{ticket_context}"
+    )
+
+    llm_result = generate_llm_response(
+        system_prompt=system_prompt,
+        user_message=user_message,
+    )
+
+    return llm_result.get("text", "").strip()
+
+
+@app.route("/api/v1/support-assets/generate", methods=["POST"])
+def support_asset_generate():
+    data = request.get_json(silent=True)
+    if not data or not data.get("ticket_id"):
+        return jsonify({"success": False, "error": "ticket_id is required"}), 400
+
+    ticket_id = data["ticket_id"]
+    if not isinstance(ticket_id, int):
+        return jsonify({"success": False, "error": "ticket_id must be an integer"}), 400
+
+    try:
+        asset_markdown = generate_support_asset(ticket_id)
+        return jsonify({
+            "success": True,
+            "ticket_id": ticket_id,
+            "asset": asset_markdown,
+        })
+    except Exception as e:
+        logger.error("Support asset generation failed for ticket %s: %s", ticket_id, e)
+        return jsonify({"success": False, "error": "Support asset generation failed"}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False, port=5000)
