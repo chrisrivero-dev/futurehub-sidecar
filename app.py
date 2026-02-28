@@ -1116,9 +1116,33 @@ def generate_support_asset(ticket_id: int) -> str:
     from models import Ticket, DraftEvent
     from sqlalchemy import desc
 
-    # -- Freshdesk API data --
-    fd_ticket = _fetch_freshdesk_ticket(ticket_id)
-    fd_conversations = _fetch_freshdesk_conversations(ticket_id)
+    # -- Resolve local ticket_id to freshdesk_ticket_id --
+    intent = None
+    confidence = None
+    draft_subject = None
+    session = SessionLocal()
+    try:
+        ticket_row = session.query(Ticket).filter_by(id=ticket_id).first()
+        if not ticket_row:
+            raise ValueError(f"Ticket {ticket_id} not found")
+        freshdesk_tid = ticket_row.freshdesk_ticket_id
+
+        draft = (
+            session.query(DraftEvent)
+            .filter(DraftEvent.ticket_id == ticket_row.id)
+            .order_by(desc(DraftEvent.created_at))
+            .first()
+        )
+        if draft:
+            intent = draft.intent
+            confidence = draft.confidence
+            draft_subject = draft.subject
+    finally:
+        session.close()
+
+    # -- Freshdesk API data (using freshdesk_ticket_id) --
+    fd_ticket = _fetch_freshdesk_ticket(freshdesk_tid)
+    fd_conversations = _fetch_freshdesk_conversations(freshdesk_tid)
 
     ticket_description = ""
     if fd_ticket:
@@ -1127,7 +1151,11 @@ def generate_support_asset(ticket_id: int) -> str:
             or fd_ticket.get("description")
             or ""
         )
-    ticket_subject = fd_ticket.get("subject", f"Ticket #{ticket_id}") if fd_ticket else f"Ticket #{ticket_id}"
+    ticket_subject = (
+        (fd_ticket.get("subject") if fd_ticket else None)
+        or draft_subject
+        or f"Ticket #{freshdesk_tid}"
+    )
 
     # Find latest outbound reply body from Freshdesk conversations
     latest_outbound_body = ""
@@ -1139,27 +1167,6 @@ def generate_support_asset(ticket_id: int) -> str:
                 or ""
             )
             break
-
-    # -- DB data --
-    intent = None
-    confidence = None
-    session = SessionLocal()
-    try:
-        ticket_row = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
-        if ticket_row:
-            draft = (
-                session.query(DraftEvent)
-                .filter(DraftEvent.ticket_id == ticket_row.id)
-                .order_by(desc(DraftEvent.created_at))
-                .first()
-            )
-            if draft:
-                intent = draft.intent
-                confidence = draft.confidence
-                if not ticket_description:
-                    ticket_subject = draft.subject or ticket_subject
-    finally:
-        session.close()
 
     # -- Build LLM prompt --
     context_parts = [f"Ticket Subject: {ticket_subject}"]
