@@ -24,9 +24,17 @@ window.addEventListener('message', (event) => {
     customerName.value = ticket.customer_name;
   }
 
-  // Store ticket id for review mode
+  // Store ticket id and domain for review mode and draft payload
   if (window.aiSidecar) {
     window.aiSidecar._currentTicketId = ticket.id || null;
+    // Extract domain from event origin (e.g. "https://company.freshdesk.com")
+    try {
+      window.aiSidecar._freshdeskDomain = event.origin
+        ? new URL(event.origin).hostname
+        : null;
+    } catch (_e) {
+      window.aiSidecar._freshdeskDomain = null;
+    }
     if (typeof window.aiSidecar._showReviewButton === 'function') {
       window.aiSidecar._showReviewButton();
     }
@@ -103,6 +111,7 @@ class AISidecar {
     this._currentStrategy = null;
     this._variableVerification = null;
     this._isAutoRunning = false;
+    this._freshdeskDomain = null;
 
     this.init();
     this.bindCollapseToggle();
@@ -239,6 +248,91 @@ class AISidecar {
     if (container) {
       container.style.display = 'none';
     }
+  }
+
+  // -----------------------------
+  // Load review data after draft completes
+  // -----------------------------
+  async loadReviewData(ticketId) {
+    if (!ticketId) return;
+
+    try {
+      const res = await fetch(`/api/v1/tickets/${ticketId}/review`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (!data.success) return;
+
+      this._renderReviewPanel(data);
+      this._showReviewButton();
+    } catch (err) {
+      console.warn('[sidecar] Review data load failed:', err);
+    }
+  }
+
+  _renderReviewPanel(data) {
+    let panel = document.getElementById('review-data-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'review-data-panel';
+      panel.className = 'section-card';
+      const responseContainer = document.getElementById('response-container');
+      if (responseContainer) {
+        responseContainer.appendChild(panel);
+      } else {
+        return;
+      }
+    }
+
+    const d = data.draft_summary || {};
+    const l = data.lifecycle || {};
+    const kbs = data.kb_recommendations || [];
+    const subject = data.subject || '';
+    const originalMsg = data.original_message || '';
+    const finalReply = data.final_reply || '';
+
+    let kbHtml = '';
+    if (kbs.length > 0) {
+      kbHtml = `
+        <div style="margin-top:10px;">
+          <strong>KB Recommendations:</strong>
+          <ul style="margin:6px 0 0 0;padding-left:18px;">
+            ${kbs.map(kb => {
+              const url = kb.url || kb.article_url || '#';
+              const title = kb.title || `Article #${kb.id || ''}`;
+              return `<li><a href="${url}" target="_blank" rel="noopener" class="kb-link" data-id="${kb.id || ''}">${title}</a></li>`;
+            }).join('')}
+          </ul>
+        </div>`;
+    }
+
+    let contextHtml = '';
+    if (subject || originalMsg || finalReply) {
+      contextHtml = `
+        <div style="margin-top:10px;">
+          <strong>Ticket Context:</strong>
+          ${subject ? `<p style="margin:4px 0;"><em>Subject:</em> ${subject}</p>` : ''}
+          ${originalMsg ? `<p style="margin:4px 0;"><em>Customer Message:</em> ${originalMsg.length > 200 ? originalMsg.slice(0, 200) + '...' : originalMsg}</p>` : ''}
+          ${finalReply ? `<p style="margin:4px 0;"><em>Agent Reply:</em> ${finalReply.length > 200 ? finalReply.slice(0, 200) + '...' : finalReply}</p>` : ''}
+        </div>`;
+    }
+
+    panel.innerHTML = `
+      <div class="section-header">
+        <h2 class="section-title">Review Intelligence</h2>
+      </div>
+      <div class="section-body">
+        <p><strong>Intent:</strong> ${d.intent || '—'}
+           <strong style="margin-left:12px;">Risk:</strong> ${d.risk_category || '—'}
+           <strong style="margin-left:12px;">Confidence:</strong> ${d.confidence != null ? Math.round(d.confidence * 100) + '%' : '—'}</p>
+        <p><strong>Outbound:</strong> ${l.outbound_count || 0}
+           <strong style="margin-left:12px;">Inbound:</strong> ${l.inbound_count || 0}
+           <strong style="margin-left:12px;">Edited:</strong> ${l.edited_count > 0 ? 'Yes' : 'No'}
+           <strong style="margin-left:12px;">Follow-up:</strong> ${l.followup_detected ? 'Yes' : 'No'}</p>
+        ${contextHtml}
+        ${kbHtml}
+      </div>
+    `;
   }
 
   // -----------------------------
@@ -642,6 +736,8 @@ class AISidecar {
       latest_message: formData.get('latest_message'),
       conversation_history: [],
       customer_name: formData.get('customer_name') || undefined,
+      freshdesk_ticket_id: this._currentTicketId || undefined,
+      freshdesk_domain: this._freshdeskDomain || undefined,
     };
 
     // Show loading state
@@ -717,6 +813,11 @@ class AISidecar {
 
       console.log('[sidecar] Draft response:', data);
       this.renderResponse(data);
+
+      // Auto-load review data after successful draft
+      if (this._currentTicketId) {
+        this.loadReviewData(this._currentTicketId);
+      }
     } catch (error) {
       console.error('Draft error:', error);
       this.showToast(
