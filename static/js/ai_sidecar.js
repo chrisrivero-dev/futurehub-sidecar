@@ -1,28 +1,48 @@
-console.log('🔥 THIS IS THE LIVE FILE v2');
+// static/js/ai_sidecar.js
+// v2.0 — Auto-run on ticket detection, single "Insert into CRM" action
+
+// -----------------------------------------------------------
+// State lock: ensure auto-run fires only once per ticket URL
+// -----------------------------------------------------------
+let _lastAutoRunTicketKey = null;
 
 window.addEventListener('message', (event) => {
   if (!event.data || event.data.type !== 'TICKET_DATA') return;
 
   const ticket = event.data.ticket;
-  console.log('✅ UI received ticket:', ticket);
+  console.log('[sidecar] Received TICKET_DATA:', ticket);
 
   const subject = document.getElementById('subject');
   const latest = document.getElementById('latest-message');
+  const customerName = document.getElementById('customer-name');
 
   if (subject) subject.value = ticket.subject || '';
   if (latest) {
     latest.value = ticket.description_text || ticket.description || '';
   }
-});
+  if (customerName && ticket.customer_name) {
+    customerName.value = ticket.customer_name;
+  }
 
-// static/js/ai_sidecar.js
-// Executive Summary is derived from existing per-ticket signals.
-// No analytics, no historical data, no AI calls.
-// This is a deterministic view layer.
+  // Store ticket id for review mode
+  if (window.aiSidecar) {
+    window.aiSidecar._currentTicketId = ticket.id || null;
+    if (typeof window.aiSidecar._showReviewButton === 'function') {
+      window.aiSidecar._showReviewButton();
+    }
+  }
 
-// -------------------------------------
+  // Auto-run draft pipeline once per unique ticket
+  const ticketKey = `${ticket.id || ''}_${ticket.subject || ''}`;
+  if (window.aiSidecar && ticketKey !== _lastAutoRunTicketKey) {
+    _lastAutoRunTicketKey = ticketKey;
+    window.aiSidecar.autoRunDraft();
+  }
+}); // ✅ CLOSES window.addEventListener('message', ...)
+
+// -----------------------------------------------------------
 // Helper text inserted by Suggested Actions
-// -------------------------------------
+// -----------------------------------------------------------
 const ACTION_SNIPPETS = {
   'Request debug.log and getblockchaininfo output':
     'To help narrow this down, could you please share your debug.log file and the output of `getblockchaininfo`?\n\n',
@@ -35,14 +55,11 @@ const ACTION_SNIPPETS = {
 
   'Provide accurate tracking information':
     "I'll confirm the latest tracking information and share an update with you.\n\n",
-  // static/js/ai_sidecar.js
-}; // <--- YOU ARE LIKELY MISSING THIS LINE
+};
 
-// -------------------------------------
-// Intent -> Recommended canned response (v1)
-// Used ONLY for recommendation/highlight.
-// Actual dropdown content is loaded from /static/data/canned_responses.json
-// -------------------------------------
+// -----------------------------------------------------------
+// Intent -> Recommended canned response
+// -----------------------------------------------------------
 const CANNED_RESPONSES = {
   'Low or Zero Hashrate': {
     intents: ['not_hashing', 'low_hashrate'],
@@ -67,7 +84,8 @@ class AISidecar {
     this.form = document.getElementById('draft-request-form');
     this.emptyState = document.getElementById('empty-state');
     this.responseContainer = document.getElementById('response-container');
-    this.generateBtn = document.getElementById('generate-btn');
+    this.regenerateBtn = document.getElementById('regenerate-btn');
+    this.insertCrmBtn = document.getElementById('insert-crm-btn');
     this.resetBtn = document.getElementById('reset-btn');
 
     this.draftTextarea =
@@ -79,11 +97,180 @@ class AISidecar {
 
     this.recommendedCannedTitle = null;
     this.cannedResponses = [];
+    this.autoSendEligible = false;
+
+    // Track current strategy and variable state
+    this._currentStrategy = null;
+    this._variableVerification = null;
+    this._isAutoRunning = false;
 
     this.init();
     this.bindCollapseToggle();
     this.bindResetButton();
     this.loadCannedResponses();
+    this.initReviewMode();
+    this.loadAnalyticsSummary(); // ← ADD THIS
+  }
+  initReviewMode() {
+    this._currentTicketId = null;
+    this._inReviewMode = false;
+
+    const header = document.querySelector('.header-controls');
+    if (!header) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'review-mode-btn';
+    btn.innerText = 'Review';
+    btn.style.display = 'none';
+    btn.style.marginLeft = '8px';
+    btn.classList.add('secondary-btn');
+
+    btn.addEventListener('click', () => {
+      if (!this._currentTicketId) return;
+      this._enterReviewMode();
+    });
+
+    header.appendChild(btn);
+    this._reviewBtn = btn;
+
+    const container = document.createElement('div');
+    container.id = 'review-mode-container';
+    container.style.display = 'none';
+    this.panel.appendChild(container);
+  }
+
+  _showReviewButton() {
+    if (this._reviewBtn && this._currentTicketId) {
+      this._reviewBtn.style.display = 'inline-block';
+    }
+  }
+
+  async _enterReviewMode() {
+    if (this._inReviewMode) return;
+
+    this._inReviewMode = true;
+
+    document
+      .querySelector('.sidecar-collapsible')
+      ?.style.setProperty('display', 'none');
+    document
+      .getElementById('response-container')
+      ?.style.setProperty('display', 'none');
+
+    const container = document.getElementById('review-mode-container');
+    if (!container) return;
+
+    container.style.display = 'block';
+    container.innerHTML = 'Loading review data...';
+
+    try {
+      const res = await fetch(
+        `/api/v1/tickets/${this._currentTicketId}/review`
+      );
+
+      if (!res.ok) {
+        throw new Error(`Review fetch failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+      this._renderReviewContent(data);
+    } catch (err) {
+      console.error('Review load error:', err);
+      container.innerHTML = 'Failed to load review data.';
+    }
+  }
+  _renderReviewContent(data) {
+    const container = document.getElementById('review-mode-container');
+    if (!container) return;
+
+    const d = data.draft_summary || {};
+    const l = data.lifecycle || {};
+
+    container.innerHTML = `
+    <div class="section-card">
+      <div class="section-header">
+        <h2 class="section-title">Ticket Review</h2>
+      </div>
+      <div class="section-body">
+        <p><strong>Intent:</strong> ${d.intent || '—'}</p>
+        <p><strong>Confidence:</strong> ${d.confidence ?? '—'}</p>
+        <p><strong>Risk:</strong> ${d.risk_category || '—'}</p>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header">
+        <h2 class="section-title">Lifecycle Signals</h2>
+      </div>
+      <div class="section-body">
+        <p><strong>Outbound Replies:</strong> ${l.outbound_count || 0}</p>
+        <p><strong>Inbound Replies:</strong> ${l.inbound_count || 0}</p>
+        <p><strong>Edited:</strong> ${l.edited_count > 0 ? 'Yes' : 'No'}</p>
+        <p><strong>Follow-up:</strong> ${l.followup_detected ? 'Yes' : 'No'}</p>
+        <p><strong>Reopened:</strong> ${l.reopened ? 'Yes' : 'No'}</p>
+        <br/>
+        <button id="review-back-btn" class="secondary-btn">Back to Processing</button>
+      </div>
+    </div>
+  `;
+
+    const backBtn = document.getElementById('review-back-btn');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        this._exitReviewMode();
+      });
+    }
+  }
+
+  _exitReviewMode() {
+    this._inReviewMode = false;
+
+    const collapsible = document.querySelector('.sidecar-collapsible');
+    if (collapsible) {
+      collapsible.style.display = 'block';
+    }
+
+    const response = document.getElementById('response-container');
+    if (response) {
+      response.style.display = 'block';
+    }
+
+    const container = document.getElementById('review-mode-container');
+    if (container) {
+      container.style.display = 'none';
+    }
+  }
+
+  // -----------------------------
+  // Analytics Summary
+  // -----------------------------
+  async loadAnalyticsSummary() {
+    try {
+      const res = await fetch('/api/v1/analytics/weekly');
+      const data = await res.json();
+
+      if (!data.success) return;
+
+      const totalEl = document.getElementById('analytics-total');
+      const autoEl = document.getElementById('analytics-auto');
+      const intentEl = document.getElementById('analytics-intent');
+      const riskEl = document.getElementById('analytics-risk');
+
+      if (totalEl) totalEl.innerText = data.total_tickets;
+      if (autoEl) autoEl.innerText = data.automation_rate;
+
+      if (intentEl) {
+        intentEl.innerText = data.top_intents?.[0]?.intent || '—';
+      }
+
+      if (riskEl) {
+        riskEl.innerText = Object.entries(data.risk_distribution)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(' | ');
+      }
+    } catch (err) {
+      console.error('[sidecar] analytics load failed', err);
+    }
   }
   // -----------------------------
   // Reset Button
@@ -100,6 +287,9 @@ class AISidecar {
       document.getElementById('auto-send-card')?.classList.add('hidden');
 
       this.hideAutoSendCard();
+      this._clearMissingVariableChips();
+      this._setInsertCrmEnabled(false);
+      _lastAutoRunTicketKey = null; // allow re-run on next ticket
       this.showToast('Form cleared');
     });
   }
@@ -134,7 +324,7 @@ class AISidecar {
   // Init + event wiring
   // -----------------------------
   init() {
-    // Form submission (prevent default, use JS)
+    // Form submission triggers regenerate (no auto-submit)
     if (this.form) {
       this.form.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -144,13 +334,31 @@ class AISidecar {
       });
     }
 
-    // Generate button click
-    if (this.generateBtn) {
-      this.generateBtn.addEventListener('click', (e) => {
+    // Regenerate button
+    if (this.regenerateBtn) {
+      this.regenerateBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        console.log('🔥 generateDraft() click');
         this.generateDraft();
+      });
+    }
+
+    // Manual Process Ticket button (standalone fallback)
+    this.processTicketBtn = document.getElementById('process-ticket-btn');
+    if (this.processTicketBtn) {
+      this.processTicketBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.processTicket();
+      });
+    }
+
+    // Insert into CRM button
+    if (this.insertCrmBtn) {
+      this.insertCrmBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.insertIntoCrm();
       });
     }
 
@@ -160,18 +368,10 @@ class AISidecar {
       copyBtn.addEventListener('click', () => this.copyDraft());
     }
 
-    // Insert draft (stub)
-    const insertBtn = document.getElementById('insert-draft-btn');
-    if (insertBtn) {
-      insertBtn.addEventListener('click', () => {
-        this.showToast('Insert functionality coming soon');
-      });
-    }
-
     // Collapsible sections
     this.initCollapsibles();
 
-    // Canned Responses dropdown open/close (wired ONCE)
+    // Canned Responses dropdown open/close
     if (this.cannedBtn && this.cannedMenu) {
       this.cannedBtn.addEventListener('click', (e) => {
         e.preventDefault();
@@ -194,6 +394,98 @@ class AISidecar {
   }
 
   // -----------------------------
+  // Auto-Run Draft (on ticket detection)
+  // -----------------------------
+  autoRunDraft() {
+    if (this._isAutoRunning) return;
+
+    const subject = document.getElementById('subject');
+    const latest = document.getElementById('latest-message');
+
+    if (!subject?.value?.trim() || !latest?.value?.trim()) {
+      console.log('[sidecar] Auto-run skipped: missing ticket data');
+      return;
+    }
+
+    console.log('[sidecar] Auto-running draft pipeline');
+    this._isAutoRunning = true;
+    this.generateDraft().finally(() => {
+      this._isAutoRunning = false;
+    });
+  }
+
+  // -----------------------------
+  // Manual Process Ticket (standalone fallback)
+  // -----------------------------
+  processTicket() {
+    const subject = document.getElementById('subject')?.value?.trim();
+    const latestMessage = document
+      .getElementById('latest-message')
+      ?.value?.trim();
+    const customerName = document
+      .getElementById('customer-name')
+      ?.value?.trim();
+
+    if (!subject || !latestMessage) {
+      this.showToast('Subject and Latest Message are required', 'error');
+      return;
+    }
+
+    // Update status indicator
+    const statusEl = document.getElementById('auto-run-status');
+    if (statusEl) {
+      statusEl.textContent = 'Processing ticket...';
+      statusEl.className = 'auto-run-status status-loading';
+    }
+
+    this.generateDraft();
+  }
+
+  // -----------------------------
+  // Insert into CRM
+  // -----------------------------
+  insertIntoCrm() {
+    if (!this.draftTextarea) return;
+
+    const text = this.draftTextarea.value || '';
+    if (!text.trim()) {
+      this.showToast('No draft to insert', 'warning');
+      return;
+    }
+
+    // Check variable verification
+    if (
+      this._variableVerification &&
+      this._variableVerification.has_required_missing
+    ) {
+      this.showToast('Cannot insert: missing required variables', 'error');
+      return;
+    }
+
+    // Phase 3.5 — Capture edit diff before sending (non-blocking)
+    if (typeof window.DraftEditTracker !== 'undefined') {
+      try {
+        var editMeta = this._collectEditReason();
+        window.DraftEditTracker.processSendAction(text, editMeta);
+      } catch (_e) {
+        /* never delay Send */
+      }
+    }
+
+    // Post message to parent (Freshdesk extension host)
+    window.parent.postMessage(
+      {
+        type: 'INSERT_INTO_CRM',
+        draft: text,
+        strategy: this._currentStrategy,
+      },
+      '*'
+    );
+
+    this.showToast('Draft inserted into CRM');
+  }
+
+  // -----------------------------
   // Auto-Send Card Methods
   // -----------------------------
   showAutoSendCard(options = {}) {
@@ -211,7 +503,6 @@ class AISidecar {
     const badgeEl = document.getElementById('auto-send-badge');
     if (badgeEl) badgeEl.classList.remove('hidden');
 
-    // 🔒 SINGLE SOURCE OF TRUTH
     this.autoSendEligible = true;
   }
 
@@ -284,7 +575,6 @@ class AISidecar {
       const category = item?.category ? String(item.category) : '';
       const content = item?.content ? String(item.content) : '';
 
-      // Recommended title is a TITLE, not an ID.
       const isRecommended =
         this.recommendedCannedTitle &&
         title === String(this.recommendedCannedTitle);
@@ -340,7 +630,7 @@ class AISidecar {
   }
 
   // -----------------------------
-  // Draft generation
+  // Draft generation (called by auto-run and regenerate)
   // -----------------------------
   async generateDraft() {
     if (!this.form) return;
@@ -354,11 +644,16 @@ class AISidecar {
       customer_name: formData.get('customer_name') || undefined,
     };
 
-    // Loading state
-    const originalHTML = this.generateBtn ? this.generateBtn.innerHTML : '';
-    if (this.generateBtn) {
-      this.generateBtn.disabled = true;
-      this.generateBtn.innerHTML = 'Generating…';
+    // Show loading state
+    const statusEl = document.getElementById('auto-run-status');
+    if (statusEl) {
+      statusEl.textContent = 'Preparing draft...';
+      statusEl.className = 'auto-run-status status-loading';
+    }
+
+    if (this.regenerateBtn) {
+      this.regenerateBtn.disabled = true;
+      this.regenerateBtn.textContent = 'Regenerating...';
     }
 
     try {
@@ -379,6 +674,39 @@ class AISidecar {
       }
 
       const data = await response.json();
+      // ---------------------------
+      // CASE INTELLIGENCE UI UPDATE
+      // ---------------------------
+
+      const pill = document.getElementById('status-pill');
+      const summary = document.getElementById('smart-summary');
+      const suggested = document.getElementById('suggested-action');
+      const trend = document.getElementById('trend-info');
+
+      if (pill && summary && suggested && trend) {
+        const risk = data.governance?.risk_category || 'low';
+        const intent = data.intent_classification?.primary_intent || 'unknown';
+        const confidence = data.intent_classification?.confidence?.overall || 0;
+
+        pill.className = 'status-pill ' + risk;
+        pill.textContent = `${risk.toUpperCase()} Risk | ${intent.replace('_', ' ')}`;
+
+        summary.textContent =
+          `Customer issue: ${intent.replace('_', ' ')}. ` +
+          `Confidence: ${Math.round(confidence * 100)}%.`;
+
+        if (intent === 'shipping_status') {
+          suggested.textContent = 'Check carrier API for delay codes';
+        } else if (intent === 'unknown_vague') {
+          suggested.textContent = 'Ask for Order # or Device Model';
+        } else if (intent === 'setup_help') {
+          suggested.textContent = 'Confirm network + apollo.local access';
+        } else {
+          suggested.textContent = 'Review draft before sending';
+        }
+
+        trend.textContent = 'Trend data loading...';
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -387,7 +715,7 @@ class AISidecar {
         );
       }
 
-      console.log('FULL RESPONSE', data);
+      console.log('[sidecar] Draft response:', data);
       this.renderResponse(data);
     } catch (error) {
       console.error('Draft error:', error);
@@ -395,10 +723,15 @@ class AISidecar {
         (error && error.message) || 'Failed to generate draft',
         'error'
       );
+
+      if (statusEl) {
+        statusEl.textContent = 'Draft failed — use Regenerate to retry';
+        statusEl.className = 'auto-run-status status-error';
+      }
     } finally {
-      if (this.generateBtn) {
-        this.generateBtn.disabled = false;
-        this.generateBtn.innerHTML = originalHTML;
+      if (this.regenerateBtn) {
+        this.regenerateBtn.disabled = false;
+        this.regenerateBtn.textContent = 'Regenerate';
       }
     }
   }
@@ -425,12 +758,36 @@ class AISidecar {
     if (this.responseContainer) {
       this.responseContainer.classList.remove('hidden');
     }
-    // -----------------------------
-    // Auto-send visibility (read-only)
-    // -----------------------------
-    if (data?.auto_send === true) {
-      console.log('✅ Auto-send eligible:', data.auto_send_reason);
 
+    // Store strategy and verification state
+    this._currentStrategy = data?.strategy?.selected || null;
+    this._variableVerification = data?.variable_verification || null;
+
+    // ----------------------------
+    // Strategy badge
+    // ----------------------------
+    this.renderStrategy(data?.strategy);
+
+    // ----------------------------
+    // Auto-run status
+    // ----------------------------
+    const statusEl = document.getElementById('auto-run-status');
+    if (statusEl) {
+      const hasRequiredMissing =
+        data?.variable_verification?.has_required_missing;
+      if (hasRequiredMissing) {
+        statusEl.textContent = 'Missing data — review required fields below';
+        statusEl.className = 'auto-run-status status-warning';
+      } else {
+        statusEl.textContent = 'Draft ready';
+        statusEl.className = 'auto-run-status status-ready';
+      }
+    }
+
+    // ----------------------------
+    // Auto-send visibility
+    // ----------------------------
+    if (data?.auto_send === true) {
       this.showAutoSendCard({
         reason: data.auto_send_reason || 'Eligible for auto-send',
       });
@@ -438,16 +795,7 @@ class AISidecar {
       this.hideAutoSendCard();
     }
 
-    // -----------------------------
-    // Auto-send visibility (read-only)
-    // -----------------------------
-    if (data && data.auto_send === true) {
-      this.showAutoSendCard({ reason: data.auto_send_reason });
-    } else {
-      this.hideAutoSendCard();
-    }
-
-    // Show cards (if ids exist in DOM)
+    // Show cards
     const idsToShow = [
       'agent-guidance-card',
       'confidence-card',
@@ -477,36 +825,67 @@ class AISidecar {
     if (data && data.draft) {
       this.renderDraft(data.draft, data.agent_guidance);
     } else {
-      console.warn('⚠️ No draft returned by backend', data);
-
+      console.warn('[sidecar] No draft returned by backend', data);
       this.showToast(
         data?.reason || 'No draft was generated for this request',
         'warning'
       );
     }
 
-    // 5. Follow-up Questions (Phase 3.1)
+    // 5. Missing variable chips
+    this.renderMissingVariables(data?.variable_verification);
+
+    // 6. Enable/disable Insert into CRM
+    const canInsert =
+      data?.draft?.response_text &&
+      !data?.variable_verification?.has_required_missing;
+    this._setInsertCrmEnabled(!!canInsert);
+
+    // 7. Follow-up Questions
     const followups =
       data && data.agent_guidance
         ? data.agent_guidance.suggested_followups
         : null;
-
     this.renderFollowupQuestions(followups);
 
-    // 6. Canned response recommendation + highlight
+    // 8. Canned response recommendation
     const primaryIntent =
       data && data.intent_classification
         ? data.intent_classification.primary_intent
         : null;
-
     this.recommendedCannedTitle =
       this.resolveRecommendedCannedTitle(primaryIntent);
-
-    // Re-render dropdown so highlight applies
     this.renderCannedResponses();
 
-    // 7. Conversation Context
+    // 9. Conversation Context
     this.renderConversationContext();
+
+    // 10. Phase 3.5 — Store ephemeral draft + emit draft_presented
+    if (
+      typeof window.DraftEditTracker !== 'undefined' &&
+      data?.draft?.response_text
+    ) {
+      try {
+        var draftId = window.DraftEditTracker.storeDraft({
+          trace_id: data.trace_id || null,
+          draft_text: data.draft.response_text,
+        });
+        this._currentDraftId = draftId;
+        this._currentTraceId = data.trace_id || null;
+
+        window.DraftEditTracker.emitDraftPresented({
+          trace_id: data.trace_id || null,
+          ticket_id: data.ticket_id || null,
+          intent: data.intent_classification?.primary_intent || null,
+          confidence: data.intent_classification?.confidence?.overall || null,
+          latency_ms: data.processing_time_ms || null,
+          tokens: data.tokens_used || null,
+          cost: data.cost || null,
+        });
+      } catch (_e) {
+        /* non-blocking */
+      }
+    }
 
     // Scroll to top
     if (this.responseContainer && this.responseContainer.scrollIntoView) {
@@ -514,6 +893,90 @@ class AISidecar {
         behavior: 'smooth',
         block: 'start',
       });
+    }
+  }
+
+  // -----------------------------
+  // Strategy display
+  // -----------------------------
+  renderStrategy(strategy) {
+    const badge = document.getElementById('strategy-badge');
+    if (!badge || !strategy) return;
+
+    const labels = {
+      AUTO_TEMPLATE: 'Auto Template',
+      PROACTIVE_DRAFT: 'Proactive Draft',
+      ADVISORY_ONLY: 'Advisory Only',
+      SCAFFOLD: 'Scaffold',
+    };
+
+    const classes = {
+      AUTO_TEMPLATE: 'badge-success',
+      PROACTIVE_DRAFT: 'badge-success',
+      ADVISORY_ONLY: 'badge-warning',
+      SCAFFOLD: 'badge-danger',
+    };
+
+    badge.textContent = labels[strategy.selected] || strategy.selected;
+    badge.className = `badge strategy-badge ${classes[strategy.selected] || 'badge-neutral'}`;
+
+    const reasonEl = document.getElementById('strategy-reason');
+    if (reasonEl) {
+      reasonEl.textContent = strategy.reason || '';
+    }
+  }
+
+  // -----------------------------
+  // Missing Variable Chips
+  // -----------------------------
+  renderMissingVariables(verification) {
+    const container = document.getElementById('missing-variables-container');
+    if (!container) return;
+
+    this._clearMissingVariableChips();
+
+    if (
+      !verification ||
+      !Array.isArray(verification.missing) ||
+      verification.missing.length === 0
+    ) {
+      container.classList.add('hidden');
+      return;
+    }
+
+    container.classList.remove('hidden');
+
+    const chipList = document.getElementById('missing-variable-chips');
+    if (!chipList) return;
+
+    verification.missing.forEach((item) => {
+      const chip = document.createElement('div');
+      chip.className = `variable-chip ${item.required ? 'variable-chip-required' : 'variable-chip-optional'}`;
+      chip.innerHTML = `
+        <span class="variable-chip-label">${escapeHtml(item.label || item.key)}</span>
+        ${item.required ? '<span class="variable-chip-badge">Required</span>' : '<span class="variable-chip-badge optional">Optional</span>'}
+      `;
+      chipList.appendChild(chip);
+    });
+  }
+
+  _clearMissingVariableChips() {
+    const chipList = document.getElementById('missing-variable-chips');
+    if (chipList) chipList.innerHTML = '';
+  }
+
+  // -----------------------------
+  // Insert CRM button enable/disable
+  // -----------------------------
+  _setInsertCrmEnabled(enabled) {
+    if (!this.insertCrmBtn) return;
+
+    this.insertCrmBtn.disabled = !enabled;
+
+    if (enabled) {
+      this.insertCrmBtn.classList.remove('btn-disabled');
+    } else {
+      this.insertCrmBtn.classList.add('btn-disabled');
     }
   }
 
@@ -536,10 +999,10 @@ class AISidecar {
     if (recEl)
       recEl.textContent = (guidance && guidance.recommendation) || 'N/A';
   }
+
   renderConfidenceRisk(input) {
     if (!input) return;
 
-    // Normalize confidence
     const confidence =
       typeof input.confidence === 'number'
         ? input.confidence
@@ -552,7 +1015,6 @@ class AISidecar {
 
     const ambiguity = input.ambiguity ?? input.confidence?.ambiguity ?? 'none';
 
-    // ---- DOM TARGETS (MATCH HTML EXACTLY) ----
     const confidencePctEl = document.getElementById('confidence-percentage');
     const confidenceLabelEl = document.getElementById('confidence-label');
     const safetyEl = document.getElementById('safety-mode');
@@ -560,7 +1022,6 @@ class AISidecar {
 
     if (!confidencePctEl || !confidenceLabelEl) return;
 
-    // ---- CONFIDENCE ----
     const pct = Math.round(confidence * 100);
     confidencePctEl.textContent = `${pct}%`;
 
@@ -571,7 +1032,6 @@ class AISidecar {
       pct >= 85 ? 'badge-success' : pct >= 65 ? 'badge-warning' : 'badge-danger'
     }`;
 
-    // ---- SAFETY MODE ----
     if (safetyEl) {
       safetyEl.textContent = safety.toUpperCase();
       safetyEl.className = `metric-badge ${
@@ -581,7 +1041,6 @@ class AISidecar {
       }`;
     }
 
-    // ---- AMBIGUITY ----
     if (ambiguityEl) {
       ambiguityEl.textContent = ambiguity.toUpperCase();
       ambiguityEl.className = `metric-badge ${
@@ -589,8 +1048,9 @@ class AISidecar {
       }`;
     }
 
-    // ---- EXECUTIVE SUMMARY (DERIVED, READ-ONLY) ----
-    if (typeof window.renderExecutiveSummary === 'function') {
+    const execContainer = document.getElementById('executive-summary');
+
+    if (execContainer && typeof window.renderExecutiveSummary === 'function') {
       window.renderExecutiveSummary({
         resolutionLikely: confidence >= 0.7,
         missingInfo: input.missing_info_detected === true,
@@ -600,7 +1060,7 @@ class AISidecar {
         notes: input.notes || '',
       });
     }
-  }
+  } // ← THIS BRACE IS MISSING IN YOUR FILE
 
   renderIntent(classification) {
     if (!classification) return;
@@ -660,8 +1120,6 @@ class AISidecar {
   }
 
   renderDraft(draft, guidance) {
-    console.log('RENDER DRAFT HIT', draft);
-
     const textarea = this.draftTextarea;
     if (!textarea) {
       console.warn('renderDraft: textarea not found');
@@ -670,36 +1128,28 @@ class AISidecar {
 
     let text = '';
 
-    // ✅ CASE 1 — Expected legacy shape
     if (draft && typeof draft.response_text === 'string') {
       text = draft.response_text;
-
-      // ✅ CASE 2 — Nested legacy shape
     } else if (
       draft &&
       typeof draft.response_text === 'object' &&
       typeof draft.response_text.response_text === 'string'
     ) {
       text = draft.response_text.response_text;
-
-      // ✅ CASE 3 — NEW backend shape (FINAL, CORRECT)
     } else if (
       draft &&
       typeof draft.response_text === 'object' &&
       typeof draft.response_text.text === 'string'
     ) {
       text = draft.response_text.text;
-
-      // ❌ Hard failure (debug only)
     } else {
-      console.error('❌ renderDraft: invalid draft payload', draft);
+      console.error('[sidecar] renderDraft: invalid draft payload', draft);
       textarea.value = '';
       return;
     }
 
     textarea.value = text;
 
-    // Badge logic (unchanged)
     const sourceBadge = document.getElementById('draft-source-badge');
     if (sourceBadge && guidance) {
       if (guidance.auto_send_eligible) {
@@ -723,17 +1173,14 @@ class AISidecar {
 
     const section = document.getElementById('followup-section');
 
-    // HARD GATE: hide section unless followups exist
     if (!Array.isArray(followups) || followups.length === 0) {
       if (section) section.style.display = 'none';
       return;
     }
 
-    // Enable section only when followups exist
     if (section) section.style.display = 'block';
 
     followups.forEach((f, index) => {
-      // ✅ MATCH BACKEND SHAPE EXACTLY
       const text = f.question;
 
       if (!text) return;
@@ -748,7 +1195,7 @@ class AISidecar {
         <span class="followup-text">${text}</span>
       `;
 
-      item.title = text; // hover preview fallback
+      item.title = text;
 
       item.addEventListener('click', () => {
         if (!this.draftTextarea) return;
@@ -765,6 +1212,16 @@ class AISidecar {
     });
   }
 
+  // Phase 3.5 — Collect edit reason from the UI selector
+  _collectEditReason() {
+    var reasonSelect = document.getElementById('edit-reason-code');
+    var noteInput = document.getElementById('edit-freeform-note');
+    return {
+      reason_code: reasonSelect ? reasonSelect.value : 'unspecified',
+      freeform_note: noteInput ? noteInput.value.trim() : '',
+    };
+  }
+
   renderConversationContext() {
     const messagesContainer = document.getElementById('conversation-messages');
     if (!messagesContainer) return;
@@ -773,7 +1230,6 @@ class AISidecar {
       '<p class="help-text">No conversation history in this request</p>';
   }
 
-  // ✅ Must exist, because init() calls it
   initCollapsibles() {
     const toggles = document.querySelectorAll('.section-toggle');
     toggles.forEach((toggle) => {
@@ -805,8 +1261,10 @@ class AISidecar {
 
     if (this.draftTextarea) this.draftTextarea.value = '';
 
-    // Hide auto-send card on reset
     this.hideAutoSendCard();
+    this._clearMissingVariableChips();
+    this._setInsertCrmEnabled(false);
+    _lastAutoRunTicketKey = null;
 
     this.showToast('Form cleared');
   }
@@ -834,7 +1292,7 @@ class AISidecar {
 }
 
 // ------------------------------------
-// Follow-up questions toggle (Phase 3.1)
+// Follow-up questions toggle
 // ------------------------------------
 document.addEventListener('click', (e) => {
   if (!e.target.classList.contains('followups-toggle')) return;
@@ -848,7 +1306,8 @@ document.addEventListener('click', (e) => {
     ? '▼ Follow-up questions (optional)'
     : '▲ Follow-up questions (optional)';
 });
-/// Canned Responses Dropdown — click-away close ONLY
+
+// Canned Responses Dropdown — click-away close
 (function () {
   const dropdownBtn = document.getElementById('canned-dropdown-btn');
   const dropdownMenu = document.getElementById('canned-dropdown-menu');
@@ -865,6 +1324,7 @@ document.addEventListener('click', (e) => {
     dropdownBtn.setAttribute('aria-expanded', 'false');
   });
 })();
+
 function updateExecutiveSummary({
   confidence,
   safety,
@@ -891,12 +1351,12 @@ function updateExecutiveSummary({
     ? 'Response meets auto-send criteria.'
     : 'Human review recommended before sending.';
 }
-const RALPH_WEEKLY_SUMMARY_URL =
-  'http://127.0.0.1:5000/insights/weekly-summary';
+
+const RALPH_WEEKLY_SUMMARY_URL = '/api/v1/analytics/weekly';
 
 let cachedWeeklySummary = null;
 let lastWeeklyFetch = 0;
-const WEEKLY_CACHE_MS = 6 * 60 * 60 * 1000; // 6 hours
+const WEEKLY_CACHE_MS = 6 * 60 * 60 * 1000;
 
 async function fetchWeeklySummary() {
   const now = Date.now();
@@ -925,48 +1385,61 @@ async function fetchWeeklySummary() {
     clearTimeout(timeoutId);
   }
 }
+
 function renderWeeklySummary(summary) {
   const body = document.getElementById('weekly-summary-body');
   if (!body) return;
 
-  if (!summary) {
-    body.innerHTML = `<p class="muted">Summary unavailable.</p>`;
+  if (!summary || !summary.total_tickets) {
+    body.innerHTML = `<p class="muted">No ticket data for the past 7 days.</p>`;
     return;
   }
 
+  const topIntents = (summary.top_intents || []).slice(0, 3);
+  const risk = summary.risk_distribution || {};
+  const automationPct = Math.round((summary.automation_rate || 0) * 100);
+
   body.innerHTML = `
     <div class="summary-section">
+      <strong>Tickets (7 days)</strong>
+      <p>${summary.total_tickets}</p>
+    </div>
+
+    <div class="summary-section">
+      <strong>Automation Rate</strong>
+      <p>${automationPct}% auto-sent</p>
+    </div>
+
+    <div class="summary-section">
       <strong>Top Intents</strong>
-      <ul>
-        ${summary.top_intents
-          .map((i) => `<li>${i.intent} (${i.event_count})</li>`)
-          .join('')}
-      </ul>
+      ${
+        topIntents.length
+          ? '<ul>' +
+            topIntents
+              .map((i) => `<li>${escapeHtml(i.intent)} (${i.count})</li>`)
+              .join('') +
+            '</ul>'
+          : '<p class="muted">None</p>'
+      }
     </div>
 
     <div class="summary-section">
-      <strong>Biggest Increases</strong>
+      <strong>Risk Distribution</strong>
       <ul>
-        ${summary.intent_increases
-          .map((i) => `<li>${i.intent}: +${i.delta}</li>`)
-          .join('')}
+        <li>Low: ${Math.round((risk.low || 0) * 100)}%</li>
+        <li>Medium: ${Math.round((risk.medium || 0) * 100)}%</li>
+        <li>High: ${Math.round((risk.high || 0) * 100)}%</li>
       </ul>
     </div>
 
-    <div class="summary-section">
-      <strong>Missing Approvals</strong>
-      <ul>
-        ${summary.intents_missing_approval
-          .map((i) => `<li>${i.intent}</li>`)
-          .join('')}
-      </ul>
-    </div>
-
-    <p class="muted">
-      Last updated: ${new Date(summary.generated_at).toLocaleDateString()}
-    </p>
+    ${
+      summary.generated_at
+        ? `<p class="muted">Updated: ${new Date(summary.generated_at).toLocaleDateString()}</p>`
+        : ''
+    }
   `;
 }
+
 document
   .getElementById('weekly-summary-toggle')
   ?.addEventListener('click', async () => {
@@ -979,26 +1452,23 @@ document
       body.dataset.loaded = 'true';
     }
   });
+
 function renderExecutiveSummary(signals) {
   if (!signals) return;
 
-  // Draft Outcome
   document.getElementById('exec-draft-outcome').textContent =
     signals.resolutionLikely ? 'Likely resolved' : 'Follow-up expected';
 
-  // Recommended Action
   document.getElementById('exec-recommended-action').textContent =
     signals.missingInfo
       ? 'Request missing information'
       : 'Send draft as written';
 
-  // Auto-Send
   document.getElementById('exec-auto-send-status').textContent =
     signals.autoSendEligible
       ? 'Eligible (manual review allowed)'
       : 'Not eligible';
 
-  // Primary Risk
   document.getElementById('exec-primary-risk').textContent =
     signals.ambiguityDetected
       ? 'Ambiguous customer intent'
@@ -1006,18 +1476,11 @@ function renderExecutiveSummary(signals) {
         ? 'Policy / safety risk'
         : 'None detected';
 
-  // Notes (short, human-readable)
   document.getElementById('exec-notes').textContent =
     signals.notes || 'Based on current ticket signals';
 }
-// Add this NEW function (does not modify existing functions)
 
 function renderDecisionExplanation(explanation) {
-  /**
-   * Render the decision explanation block.
-   * Pure presentation - no actions, no mutations.
-   */
-
   const container = document.getElementById('decision-explanation-container');
   if (!container || !explanation) return;
 
@@ -1026,24 +1489,24 @@ function renderDecisionExplanation(explanation) {
       <span class="explanation-label">Why This Intent:</span>
       <span class="explanation-value">${escapeHtml(explanation.why_this_intent)}</span>
     </div>
-    
+
     <div class="explanation-row">
       <span class="explanation-label">Auto-Send Decision:</span>
       <span class="explanation-value">${escapeHtml(explanation.why_auto_send_allowed_or_blocked)}</span>
     </div>
-    
+
     <div class="explanation-row">
       <span class="explanation-label">Confidence:</span>
       <span class="explanation-value">
         ${explanation.confidence_band.toUpperCase()} — ${escapeHtml(explanation.confidence_description)}
       </span>
     </div>
-    
+
     <div class="explanation-row">
       <span class="explanation-label">Safety Mode:</span>
       <span class="explanation-value">${escapeHtml(explanation.safety_explanation)}</span>
     </div>
-    
+
     ${
       explanation.missing_information.length > 0
         ? `
@@ -1054,7 +1517,7 @@ function renderDecisionExplanation(explanation) {
     `
         : ''
     }
-    
+
     <div class="explanation-signals">
       <span class="explanation-label">Signals Used:</span>
       ${explanation.key_signals_used
@@ -1068,20 +1531,12 @@ function renderDecisionExplanation(explanation) {
   container.classList.remove('hidden');
 }
 
-// In the existing handleDraftResponse() function, ADD this call:
-
 function handleDraftResponse(data) {
-  // ... existing code ...
-
-  // NEW: Render decision explanation if present
   if (data.decision_explanation) {
     renderDecisionExplanation(data.decision_explanation);
   }
-
-  // ... rest of existing code ...
 }
 
-// Add helper function if not already present:
 function escapeHtml(unsafe) {
   return unsafe
     .replace(/&/g, '&amp;')
@@ -1090,19 +1545,16 @@ function escapeHtml(unsafe) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
 // -------------------------------------
 // Initialize Sidecar (ONLY ONCE)
 // -------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('Sidecar JS loaded');
+  console.log('[sidecar] JS loaded — v2.0 auto-run mode');
 
-  // Initialize sidecar
   window.aiSidecar = new AISidecar();
 
-  // Auto-run ONLY when query params exist
-  if (typeof window.aiSidecar.autoGenerateFromQueryParamsOnce === 'function') {
-    setTimeout(() => {
-      window.aiSidecar.autoGenerateFromQueryParamsOnce();
-    }, 200);
+  if (window.aiSidecar.loadAnalyticsSummary) {
+    window.aiSidecar.loadAnalyticsSummary();
   }
 });
