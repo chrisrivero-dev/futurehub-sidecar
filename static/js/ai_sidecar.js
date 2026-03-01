@@ -113,15 +113,20 @@ class AISidecar {
     this._isAutoRunning = false;
     this._freshdeskDomain = null;
 
+    // Lifecycle state
+    this._currentTicketId = null;
+    this._inReviewMode = false;
+
     this.init();
     this.bindCollapseToggle();
     this.bindResetButton();
     this.loadCannedResponses();
     this.initReviewMode();
-    this.loadAnalyticsSummary(); // ← ADD THIS
+    this.loadAnalyticsSummary();
   }
+
   initReviewMode() {
-    this._currentTicketId = null;
+    // DO NOT reset _currentTicketId here
     this._inReviewMode = false;
 
     const header = document.querySelector('.header-controls');
@@ -188,9 +193,14 @@ class AISidecar {
       container.innerHTML = 'Failed to load review data.';
     }
   }
+
   _renderReviewContent(data) {
     const container = document.getElementById('review-mode-container');
     if (!container) return;
+
+    // existing render logic continues...
+  }
+}
 
     const d = data.draft_summary || {};
     const l = data.lifecycle || {};
