@@ -227,6 +227,11 @@
     if (!event.data) return;
 
     if (event.data.type === "DRAFT_READY") {
+      var currentId = getTicketId();
+      if (event.data.ticket_id && currentId && event.data.ticket_id !== currentId) {
+        log("Ignoring stale DRAFT_READY for ticket", event.data.ticket_id, "current:", currentId);
+        return;
+      }
       log("Received DRAFT_READY, length:", (event.data.draft || "").length);
       insertIntoEditor(event.data.draft || "");
       return;

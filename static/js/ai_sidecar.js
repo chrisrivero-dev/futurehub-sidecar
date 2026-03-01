@@ -4,7 +4,6 @@
 // -----------------------------------------------------------
 // State lock: ensure auto-run fires only once per ticket URL
 // -----------------------------------------------------------
-let _lastAutoRunTicketKey = null;
 
 window.addEventListener('message', (event) => {
   if (!event.data || event.data.type !== 'TICKET_DATA') return;
@@ -26,7 +25,10 @@ window.addEventListener('message', (event) => {
 
   // Store ticket id and domain for review mode and draft payload
   if (window.aiSidecar) {
+    const prevTicketId = window.aiSidecar._currentTicketId;
     window.aiSidecar._currentTicketId = ticket.id || null;
+    window.aiSidecar._currentTicketData = ticket;
+
     // Extract domain from event origin (e.g. "https://company.freshdesk.com")
     try {
       window.aiSidecar._freshdeskDomain = event.origin
@@ -35,16 +37,20 @@ window.addEventListener('message', (event) => {
     } catch (_e) {
       window.aiSidecar._freshdeskDomain = null;
     }
+
+    // Clear stale draft when ticket changes
+    if (ticket.id && ticket.id !== prevTicketId) {
+      window.aiSidecar._clearDraftState();
+    }
+
     if (typeof window.aiSidecar._showReviewButton === 'function') {
       window.aiSidecar._showReviewButton();
     }
-  }
 
-  // Auto-run draft pipeline once per unique ticket
-  const ticketKey = `${ticket.id || ''}_${ticket.subject || ''}`;
-  if (window.aiSidecar && ticketKey !== _lastAutoRunTicketKey) {
-    _lastAutoRunTicketKey = ticketKey;
-    window.aiSidecar.autoRunDraft();
+    // Auto-run only if this ticket hasn't been processed yet
+    if (ticket.id && ticket.id !== window.aiSidecar._lastProcessedTicketId) {
+      window.aiSidecar.autoRunDraft();
+    }
   }
 }); // ✅ CLOSES window.addEventListener('message', ...)
 
@@ -113,6 +119,10 @@ class AISidecar {
     this._isAutoRunning = false;
     this._freshdeskDomain = null;
 
+    // Draft bleed prevention
+    this._currentTicketData = null;
+    this._lastProcessedTicketId = null;
+
     this.init();
     this.bindCollapseToggle();
     this.bindResetButton();
@@ -146,6 +156,24 @@ class AISidecar {
     container.id = 'review-mode-container';
     container.style.display = 'none';
     this.panel.appendChild(container);
+  }
+
+  _clearDraftState() {
+    // Wipe stale draft so it can't bleed into a new ticket
+    if (this.draftTextarea) this.draftTextarea.value = '';
+    this.responseContainer?.classList.add('hidden');
+    this.emptyState?.classList.remove('hidden');
+    document.getElementById('auto-send-card')?.classList.add('hidden');
+
+    const statusEl = document.getElementById('auto-run-status');
+    if (statusEl) {
+      statusEl.textContent = 'Waiting for draft...';
+      statusEl.className = 'auto-run-status status-loading';
+    }
+
+    // Remove review panel from previous ticket
+    const reviewPanel = document.getElementById('review-data-panel');
+    if (reviewPanel) reviewPanel.remove();
   }
 
   _showReviewButton() {
@@ -442,7 +470,7 @@ class AISidecar {
       this.hideAutoSendCard();
       this._clearMissingVariableChips();
       this._setInsertCrmEnabled(false);
-      _lastAutoRunTicketKey = null; // allow re-run on next ticket
+      this._lastProcessedTicketId = null; // allow re-run on next ticket
       this.showToast('Form cleared');
     });
   }
@@ -805,28 +833,18 @@ class AISidecar {
   async generateDraft() {
     if (!this.form) return;
 
-    const formData = new FormData(this.form);
+    // Snapshot the ticket ID at call time for stale-draft guard
+    const draftForTicketId = this._currentTicketId;
 
-    const ticketIdFromQuery = Number(
-      new URLSearchParams(window.location.search).get('ticket_id')
-    );
-    const ticketIdFromPath = Number(window.location.pathname.split('/').pop());
-    const freshdeskTicketId =
-      Number.isFinite(ticketIdFromQuery) && ticketIdFromQuery
-        ? ticketIdFromQuery
-        : Number.isFinite(ticketIdFromPath) && ticketIdFromPath
-          ? ticketIdFromPath
-          : null;
+    const formData = new FormData(this.form);
 
     const payload = {
       subject: formData.get('subject'),
       latest_message: formData.get('latest_message'),
       conversation_history: [],
       customer_name: formData.get('customer_name') || undefined,
-
-      // ✅ REQUIRED FOR REVIEW HYDRATION
-      freshdesk_ticket_id: freshdeskTicketId,
-      freshdesk_domain: window.location.hostname,
+      freshdesk_ticket_id: this._currentTicketId || undefined,
+      freshdesk_domain: this._freshdeskDomain || undefined,
     };
 
     // Show loading state
@@ -901,7 +919,17 @@ class AISidecar {
       }
 
       console.log('[sidecar] Draft response:', data);
+
+      // Guard: discard response if ticket changed while awaiting
+      if (draftForTicketId && draftForTicketId !== this._currentTicketId) {
+        console.warn('[sidecar] Discarding stale draft for ticket', draftForTicketId);
+        return;
+      }
+
       this.renderResponse(data);
+
+      // Mark this ticket as processed
+      this._lastProcessedTicketId = draftForTicketId;
 
       // Emit DRAFT_READY to parent (TamperMonkey) for auto-insert
       const draftText = this.draftTextarea ? this.draftTextarea.value : '';
@@ -909,8 +937,9 @@ class AISidecar {
         window.parent.postMessage({
           type: 'DRAFT_READY',
           draft: draftText,
+          ticket_id: draftForTicketId,
         }, '*');
-        console.log('[sidecar] DRAFT_READY emitted, length:', draftText.length);
+        console.log('[sidecar] DRAFT_READY emitted, ticket:', draftForTicketId, 'length:', draftText.length);
       }
 
       // Auto-load review data after successful draft
