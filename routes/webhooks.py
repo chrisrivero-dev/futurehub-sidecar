@@ -16,6 +16,7 @@ from flask import Blueprint, jsonify, request
 
 from db import SessionLocal, safe_commit
 from models import (
+    Ticket,  
     DraftEvent,
     TicketReply,
     TicketStatusChange,
@@ -62,45 +63,75 @@ def _find_recent_draft(session, ticket_id: int, before: datetime | None = None):
 
 # ── Endpoint ──────────────────────────────────────────────────
 
-
+    
 @webhooks_bp.route("/freshdesk", methods=["POST"])
 def freshdesk_webhook():
-    """
-    POST /api/v1/webhooks/freshdesk
-
-    Expects JSON:
-    {
-        "event_type": "reply_sent" | "customer_replied" | "status_changed",
-        "freshdesk_ticket_id": 12345,
-        "freshdesk_domain": "company.freshdesk.com",
-        "data": { ... }
-    }
-
-    Returns 200 on success (including idempotent duplicates).
-    Returns 401 on bad secret, 400 on missing fields.
-    DB failures are swallowed — webhook must never 500 for transient DB issues.
-    """
     if not _verify_secret(request):
         return jsonify({"error": "unauthorized"}), 401
 
+    # DEBUG: log raw incoming webhook payload (temporary)
+    try:
+        raw_body = request.get_data(as_text=True) or ""
+        print("[WEBHOOK] content_type=", request.content_type, flush=True)
+        print("[WEBHOOK] raw_body=", raw_body[:2000], flush=True)
+        print("[WEBHOOK] json=", request.get_json(silent=True), flush=True)
+    except Exception as e:
+        print("[WEBHOOK] logging_failed=", str(e), flush=True)
+
+    import json
+    # ... existing logic below ...
     body = request.get_json(silent=True) or {}
     event_type = body.get("event_type")
     fd_ticket_id = body.get("freshdesk_ticket_id")
     fd_domain = body.get("freshdesk_domain")
     data = body.get("data") or {}
 
+    if isinstance(data, str) and data.strip().startswith("{"):
+        try:
+            data = json.loads(data)
+        except Exception:
+            data = {}
+
+    # IMPORTANT: swallow malformed webhook instead of 400
     if not event_type or not fd_ticket_id or not fd_domain:
-        return jsonify({"error": "missing event_type, freshdesk_ticket_id, or freshdesk_domain"}), 400
+        logger.warning(
+            "Webhook missing required fields. content_type=%s raw=%r parsed=%r",
+            request.content_type,
+            raw_body[:500],
+            body,
+        )
+        return jsonify({"ok": True, "swallowed_error": True}), 200
 
-    session = None
+ 
+    # Normalize/force domain
+    fd_domain = fd_domain or "ccrypto8391.freshdesk.com"
+
+    session = SessionLocal()
+    t0 = perf_counter()
+
     try:
-        session = SessionLocal()
-        t0 = perf_counter()
+        # Ensure Ticket row exists (idempotent)
+        ticket = session.query(Ticket).filter_by(
+            freshdesk_ticket_id=str(fd_ticket_id),
+            freshdesk_domain=fd_domain
+        ).first()
 
-        t1 = perf_counter()
-        ticket = get_or_create_ticket(session, int(fd_ticket_id), fd_domain)
-        logger.info("webhook:get_or_create_ticket ms=%d", int((perf_counter() - t1) * 1000))
+        if not ticket:
+            ticket = Ticket(
+                freshdesk_ticket_id=str(fd_ticket_id),
+                freshdesk_domain=fd_domain
+            )
+            session.add(ticket)
+            session.flush()  # ensures ticket.id is available
 
+        logger.info(
+            "[WEBHOOK] event=%s fd_ticket_id=%s local_ticket_id=%s",
+            event_type,
+            fd_ticket_id,
+            ticket.id
+        )
+
+        # Route to correct handler
         if event_type == "reply_sent":
             result = _handle_reply_sent(session, ticket, data)
         elif event_type == "customer_replied":
@@ -110,29 +141,22 @@ def freshdesk_webhook():
         else:
             return jsonify({"error": f"unknown event_type: {event_type}"}), 400
 
-        t2 = perf_counter()
         safe_commit(session)
-        logger.info("webhook:safe_commit ms=%d", int((perf_counter() - t2) * 1000))
 
-        logger.info("webhook:total ms=%d", int((perf_counter() - t0) * 1000))
+        logger.info(
+            "webhook:total ms=%d",
+            int((perf_counter() - t0) * 1000)
+        )
+
         return jsonify({"ok": True, **result}), 200
 
     except Exception as e:
-        try:
-            if session is not None:
-                session.rollback()
-        except Exception:
-            pass
-
-        logger.error("Webhook processing failed (non-fatal): %s", e, exc_info=True)
-        return jsonify({"ok": True, "swallowed_error": True}), 200
+        session.rollback()
+        raise
 
     finally:
-        try:
-            if session is not None:
-                session.close()
-        except Exception:
-            pass
+        session.close()
+ 
 
 
 # ── Handlers ──────────────────────────────────────────────────
@@ -185,11 +209,14 @@ def _handle_customer_replied(session, ticket, data):
     Inbound customer reply on a ticket.
     Stored as-is. Analytics query determines if it constitutes a follow-up.
     """
-    conv_id = data.get("conversation_id")
-    body = data.get("body") or ""
+    conv_id = data.get("conversation_id") or "0"
+    sent_body = data.get("body") or ""
 
-    if not conv_id:
-        return {"skipped": "missing conversation_id"}
+    # TEMP: allow empty conversation_id for debugging
+    try:
+        conv_id = int(conv_id)
+    except (TypeError, ValueError):
+        conv_id = 0
 
     existing = session.query(TicketReply).filter_by(freshdesk_conversation_id=int(conv_id)).first()
     if existing:

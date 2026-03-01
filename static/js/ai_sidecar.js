@@ -229,6 +229,60 @@ class AISidecar {
         this._exitReviewMode();
       });
     }
+
+    // Generate Support Asset Button
+    const generateBtn = document.createElement('button');
+    generateBtn.id = 'generate-support-asset-btn';
+    generateBtn.className = 'primary-btn';
+    generateBtn.style.marginTop = '16px';
+    generateBtn.textContent = 'Generate Support Asset';
+
+    generateBtn.addEventListener('click', async () => {
+      try {
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Generating...';
+
+        const response = await fetch(
+          '/api/v1/support-assets/generate-from-text',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: data.subject || '',
+              original_message: data.original_message || '',
+              final_reply: data.final_reply || '',
+              intent: d.intent || null,
+              confidence: d.confidence || null,
+            }),
+          }
+        );
+
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error('Generation failed');
+        }
+
+        let assetContainer = document.getElementById('support-asset-output');
+        if (!assetContainer) {
+          assetContainer = document.createElement('pre');
+          assetContainer.id = 'support-asset-output';
+          assetContainer.style.marginTop = '20px';
+          assetContainer.style.whiteSpace = 'pre-wrap';
+          container.appendChild(assetContainer);
+        }
+
+        assetContainer.textContent = result.asset;
+      } catch (err) {
+        console.error('Support asset error:', err);
+        alert('Support asset generation failed.');
+      } finally {
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate Support Asset';
+      }
+    });
+
+    container.appendChild(generateBtn);
   }
 
   _exitReviewMode() {
@@ -731,13 +785,26 @@ class AISidecar {
 
     const formData = new FormData(this.form);
 
+    const ticketIdFromQuery = Number(
+      new URLSearchParams(window.location.search).get('ticket_id')
+    );
+    const ticketIdFromPath = Number(window.location.pathname.split('/').pop());
+    const freshdeskTicketId =
+      Number.isFinite(ticketIdFromQuery) && ticketIdFromQuery
+        ? ticketIdFromQuery
+        : Number.isFinite(ticketIdFromPath) && ticketIdFromPath
+          ? ticketIdFromPath
+          : null;
+
     const payload = {
       subject: formData.get('subject'),
       latest_message: formData.get('latest_message'),
       conversation_history: [],
       customer_name: formData.get('customer_name') || undefined,
-      freshdesk_ticket_id: this._currentTicketId || undefined,
-      freshdesk_domain: this._freshdeskDomain || undefined,
+
+      // ✅ REQUIRED FOR REVIEW HYDRATION
+      freshdesk_ticket_id: freshdeskTicketId,
+      freshdesk_domain: window.location.hostname,
     };
 
     // Show loading state

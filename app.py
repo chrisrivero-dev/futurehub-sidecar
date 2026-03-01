@@ -31,6 +31,7 @@ from audit.events import emit_event
 from db import SessionLocal, safe_commit
 from flask import Flask, request, jsonify, render_template  # ensure render_template is here
 from routes.webhooks import webhooks_bp
+from sqlalchemy import func
 
 # =========================
 # App Initialization
@@ -820,6 +821,9 @@ def review_ticket(ticket_id):
     empty = {
         "success": True,
         "ticket_id": ticket_id,
+        "subject": "",
+        "original_message": "",
+        "final_reply": "",
         "draft_summary": {
             "intent": None,
             "confidence": None,
@@ -845,22 +849,22 @@ def review_ticket(ticket_id):
 
         session = SessionLocal()
         try:
-            # Resolve freshdesk ticket_id to local DB id
+            # Resolve freshdesk ticket_id -> local DB id
             ticket = session.query(Ticket).filter_by(freshdesk_ticket_id=ticket_id).first()
             if not ticket:
                 return empty
+
             local_id = ticket.id
 
-            # Most recent draft for this ticket
-            drafts = (
+            # Most recent draft
+            latest_draft = (
                 session.query(DraftEvent)
                 .filter(DraftEvent.ticket_id == local_id)
                 .order_by(desc(DraftEvent.created_at))
-                .all()
+                .first()
             )
-            latest_draft = drafts[0] if drafts else None
 
-            # All replies, ordered by time for first-outbound detection
+            # Replies
             replies = (
                 session.query(TicketReply)
                 .filter(TicketReply.ticket_id == local_id)
@@ -878,23 +882,20 @@ def review_ticket(ticket_id):
             inbound = [r for r in replies if r.direction == "inbound"]
             edited_count = sum(1 for r in outbound if r.edited is True)
 
-            # strategy = DraftEvent.mode (e.g. "template", "llm", "hybrid")
             strategy = latest_draft.mode if latest_draft else None
 
-            # followup: >1 inbound replies after the first outbound
+            # followup: inbound replies after first outbound
             followup_detected = False
             if outbound and inbound:
                 first_outbound_at = outbound[0].created_at
                 inbound_after = [r for r in inbound if r.created_at > first_outbound_at]
                 followup_detected = len(inbound_after) > 1
 
-            # reopened: any resolved/closed → open transition
             reopened = any(
                 s.old_status in ("resolved", "closed") and s.new_status == "open"
                 for s in status_changes
             )
 
-            # Lifecycle-computed risk category
             confidence_val = latest_draft.confidence if latest_draft else None
             if edited_count > 1 or reopened or (confidence_val is not None and confidence_val < 0.75):
                 risk_category = "high"
@@ -903,7 +904,9 @@ def review_ticket(ticket_id):
             else:
                 risk_category = "low"
 
-            # Fetch text content from Freshdesk API
+            # ----------------------------------------
+            # Freshdesk API data (for stateless asset)
+            # ----------------------------------------
             fd_ticket = _fetch_freshdesk_ticket(ticket_id)
             fd_conversations = _fetch_freshdesk_conversations(ticket_id)
 
@@ -912,15 +915,19 @@ def review_ticket(ticket_id):
                 or (latest_draft.subject if latest_draft else None)
                 or ""
             )
+
             original_message = (
-                (fd_ticket.get("description_text") or fd_ticket.get("description") or "")
-                if fd_ticket else ""
+                (fd_ticket.get("description_text") if fd_ticket else None)
+                or (fd_ticket.get("description") if fd_ticket else None)
+                or ""
             )
+
             final_reply = ""
-            for conv in reversed(fd_conversations):
-                if conv.get("incoming") is False:
-                    final_reply = conv.get("body_text") or conv.get("body") or ""
-                    break
+            if fd_conversations:
+                for conv in reversed(fd_conversations):
+                    if conv.get("incoming") is False:
+                        final_reply = (conv.get("body_text") or conv.get("body") or "")
+                        break
 
             return {
                 "success": True,
@@ -951,8 +958,6 @@ def review_ticket(ticket_id):
     except Exception as e:
         logger.error("review_ticket failed: %s", e)
         return empty
-
-
 # ==========================================================
 # KB Draft Generation
 # POST /api/v1/kb/generate
@@ -1243,6 +1248,8 @@ def generate_support_asset(ticket_id: int) -> str:
         session.close()
 
     # -- Freshdesk API data (using freshdesk_ticket_id) --
+    freshdesk_tid = ticket.freshdesk_ticket_id
+
     fd_ticket = _fetch_freshdesk_ticket(freshdesk_tid)
     fd_conversations = _fetch_freshdesk_conversations(freshdesk_tid)
 
