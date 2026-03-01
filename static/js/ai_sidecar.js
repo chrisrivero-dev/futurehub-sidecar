@@ -128,7 +128,49 @@ class AISidecar {
     this.bindResetButton();
     this.loadCannedResponses();
     this.initReviewMode();
-    this.loadAnalyticsSummary(); // ← ADD THIS
+    this.loadAnalyticsSummary();
+    this._initTicketIdFromContext();
+  }
+
+  // -----------------------------
+  // Hydrate ticket ID from Freshdesk SDK or URL fallback
+  // -----------------------------
+  _initTicketIdFromContext() {
+    // If already set via postMessage, skip
+    if (this._currentTicketId) return;
+
+    // Try Freshdesk Marketplace SDK
+    if (typeof app !== 'undefined' && app.initialized) {
+      app.initialized().then((client) => {
+        return client.data.get('ticket');
+      }).then((ticketData) => {
+        const tid = ticketData?.ticket?.id;
+        if (tid && !this._currentTicketId) {
+          this._currentTicketId = tid;
+          this._freshdeskDomain = ticketData?.ticket?.domain || null;
+          console.log('[sidecar] Ticket ID from Freshdesk SDK:', tid);
+        }
+      }).catch(() => {
+        // SDK not available or failed — fall through to URL
+      });
+    }
+
+    // URL fallback: ?ticket_id=123 or referrer /a/tickets/123
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromParam = Number(params.get('ticket_id'));
+      if (Number.isFinite(fromParam) && fromParam > 0) {
+        this._currentTicketId = fromParam;
+        console.log('[sidecar] Ticket ID from URL param:', fromParam);
+        return;
+      }
+
+      const refMatch = (document.referrer || '').match(/\/a\/tickets\/(\d+)/);
+      if (refMatch) {
+        this._currentTicketId = parseInt(refMatch[1], 10);
+        console.log('[sidecar] Ticket ID from referrer:', this._currentTicketId);
+      }
+    } catch (_e) { /* ignore */ }
   }
   initReviewMode() {
     this._currentTicketId = null;
