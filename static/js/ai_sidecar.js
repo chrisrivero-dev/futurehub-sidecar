@@ -629,19 +629,12 @@ class AISidecar {
         /* never delay Send */
       }
     }
+  // Mailbox transport — no postMessage
+  window.__SIDECAR_DRAFT__ = text;
+  window.__SIDECAR_DRAFT_TS__ = Date.now();
+  window.__SIDECAR_STRATEGY__ = this._currentStrategy;
 
-    // Post message to parent (Freshdesk extension host)
-    window.parent.postMessage(
-      {
-        type: 'INSERT_INTO_CRM',
-        draft: text,
-        strategy: this._currentStrategy,
-      },
-      '*'
-    );
-
-    this.showToast('Draft inserted into CRM');
-  }
+  this.showToast('Draft ready for injection');
 
   // -----------------------------
   // Auto-Send Card Methods
