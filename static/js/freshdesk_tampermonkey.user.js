@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Sidecar → Freshdesk Auto Draft (v8.0)
+// @name         Sidecar → Freshdesk Auto Draft (v9.0)
 // @namespace    sidecar
-// @version      8.0
-// @description  SPA-aware: injects/hides iframe on ticket routes, auto-inserts drafts
+// @version      9.0
+// @description  Standalone window: opens sidecar in separate window, postMessage bridge
 // @match        https://*.freshdesk.com/*
 // @grant        none
 // ==/UserScript==
@@ -10,12 +10,13 @@
 (function () {
   "use strict";
 
-  var SIDECAR_BASE = "https://futurehub-sidecar-production.up.railway.app";
-  var SIDECAR_PATH = "/sidecar/";
-  var IFRAME_ID = "sidecar-iframe";
+  var SIDECAR_URL = "https://futurehub-sidecar-production.up.railway.app/sidecar/";
+  var SIDECAR_ORIGIN = "https://futurehub-sidecar-production.up.railway.app";
+  var WINDOW_NAME = "FH_SIDECAR_WINDOW";
   var ROUTE_CHECK_MS = 800;
   var LOG = "[TM]";
 
+  var sidecarWindow = null;
   var lastSentTicketId = null;
   var lastPath = null;
 
@@ -76,71 +77,63 @@
   }
 
   // -------------------------------------------------
-  // Iframe management
+  // Standalone window management
   // -------------------------------------------------
-  function getIframe() {
-    return document.getElementById(IFRAME_ID);
-  }
-
-  function showIframe() {
-    var iframe = getIframe();
-    if (iframe) {
-      iframe.style.display = "";
-      return iframe;
+  function openOrReuseSidecar() {
+    if (sidecarWindow && !sidecarWindow.closed) {
+      sidecarWindow.focus();
+      return sidecarWindow;
     }
-
-    // Check for marketplace iframe first
-    var marketplaceIframes = document.querySelectorAll(
-      'iframe[src*="futurehub-sidecar"], iframe[src*="railway.app"]'
+    sidecarWindow = window.open(
+      SIDECAR_URL,
+      WINDOW_NAME,
+      "width=500,height=900"
     );
-    if (marketplaceIframes.length > 0) {
-      iframe = marketplaceIframes[0];
-      iframe.id = IFRAME_ID;
-      iframe._loaded = true;
-      log("Found existing marketplace iframe");
-      return iframe;
-    }
-
-    // Create new
-    iframe = document.createElement("iframe");
-    iframe.id = IFRAME_ID;
-    iframe.src = SIDECAR_BASE + SIDECAR_PATH;
-    iframe.style.cssText =
-      "position:fixed;right:0;top:60px;width:420px;height:calc(100vh - 60px);" +
-      "border:none;z-index:99999;background:#fff;box-shadow:-2px 0 8px rgba(0,0,0,0.12);";
-    document.body.appendChild(iframe);
-
-    iframe.addEventListener("load", function () {
-      iframe._loaded = true;
-    }, { once: true });
-
-    log("Injected sidecar iframe");
-    return iframe;
-  }
-
-  function hideIframe() {
-    var iframe = getIframe();
-    if (iframe) {
-      iframe.style.display = "none";
-    }
+    log("Opened sidecar window");
+    return sidecarWindow;
   }
 
   // -------------------------------------------------
-  // Send TICKET_DATA
+  // Send TICKET_DATA to standalone window
   // -------------------------------------------------
-  function sendTicketData(iframe, ticketId, subject, description) {
-    if (!iframe || !iframe.contentWindow) return;
+  function sendTicketData(ticketId, subject, description) {
+    var win = openOrReuseSidecar();
+    if (!win) {
+      log("Failed to open sidecar window");
+      return;
+    }
+
     var message = {
       type: "TICKET_DATA",
       ticket: {
         id: ticketId,
         subject: subject,
         description_text: description,
-        customer_name: ""
+        customer_name: "",
+        originDomain: window.location.hostname
       }
     };
-    log("Sending ticket ID:", ticketId, "subject:", subject.slice(0, 60));
-    iframe.contentWindow.postMessage(message, SIDECAR_BASE);
+
+    // Window may still be loading — retry postMessage until ready
+    var sent = false;
+    var attempts = 0;
+    var sendInterval = setInterval(function () {
+      try {
+        win.postMessage(message, SIDECAR_ORIGIN);
+        if (!sent) {
+          log("Sent TICKET_DATA to sidecar, ticket:", ticketId);
+          sent = true;
+        }
+        clearInterval(sendInterval);
+      } catch (_e) {
+        // Window not ready yet
+      }
+      attempts++;
+      if (attempts > 20) {
+        clearInterval(sendInterval);
+        log("Failed to send TICKET_DATA after retries");
+      }
+    }, 300);
   }
 
   // -------------------------------------------------
@@ -172,7 +165,7 @@
   }
 
   // -------------------------------------------------
-  // Route watcher — single interval handles all SPA nav
+  // Route watcher
   // -------------------------------------------------
   function routeCheck() {
     var currentPath = window.location.pathname;
@@ -180,50 +173,29 @@
     lastPath = currentPath;
 
     if (!isTicketRoute()) {
-      // Not on a ticket page — hide iframe, reset state
-      hideIframe();
       if (pathChanged) {
         lastSentTicketId = null;
       }
       return;
     }
 
-    // On a ticket page
     var ticketId = getTicketId();
     if (!ticketId) return;
-
-    var iframe = showIframe();
-
-    // Only send data once per ticket
     if (ticketId === lastSentTicketId) return;
 
     var subject = extractSubject();
     var description = extractDescription();
-    if (!subject && !description) return; // DOM not ready yet
+    if (!subject && !description) return;
 
-    if (!iframe._loaded) {
-      // Wait for load then send
-      var onLoad = function () {
-        iframe._loaded = true;
-        sendTicketData(iframe, ticketId, subject, description);
-        lastSentTicketId = ticketId;
-      };
-      iframe.addEventListener("load", onLoad, { once: true });
-      // Timeout fallback
-      setTimeout(function () {
-        if (!iframe._loaded) onLoad();
-      }, 2000);
-      return;
-    }
-
-    sendTicketData(iframe, ticketId, subject, description);
+    sendTicketData(ticketId, subject, description);
     lastSentTicketId = ticketId;
   }
 
   // -------------------------------------------------
-  // Listen for messages from sidecar
+  // Listen for messages from sidecar window
   // -------------------------------------------------
   window.addEventListener("message", function (event) {
+    if (event.origin !== SIDECAR_ORIGIN) return;
     if (!event.data) return;
 
     if (event.data.type === "DRAFT_READY") {
@@ -247,6 +219,6 @@
   // Start
   // -------------------------------------------------
   setInterval(routeCheck, ROUTE_CHECK_MS);
-  routeCheck(); // immediate first check
-  log("v8.0 loaded — SPA-aware route watcher active");
+  routeCheck();
+  log("v9.0 loaded — standalone window mode");
 })();

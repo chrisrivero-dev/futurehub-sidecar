@@ -40,8 +40,9 @@ function _applyTicketData(sidecar, ticket, origin) {
   const prevTicketId = sidecar._currentTicketId;
   sidecar._currentTicketId = ticket.id || null;
   sidecar._currentTicketData = ticket;
+  sidecar._openerOrigin = origin || '*';
 
-  console.log('[sidecar] _currentTicketId set to:', sidecar._currentTicketId);
+  console.log('[sidecar] _currentTicketId set to:', sidecar._currentTicketId, 'origin:', sidecar._openerOrigin);
 
   // Extract domain from event origin
   try {
@@ -135,6 +136,7 @@ class AISidecar {
     // Draft bleed prevention
     this._currentTicketData = null;
     this._lastProcessedTicketId = null;
+    this._openerOrigin = null;
 
     this.init();
     this.bindCollapseToggle();
@@ -695,15 +697,19 @@ class AISidecar {
       }
     }
 
-    // Post message to parent (Freshdesk extension host)
-    window.parent.postMessage(
-      {
-        type: 'INSERT_INTO_CRM',
-        draft: text,
-        strategy: this._currentStrategy,
-      },
-      '*'
-    );
+    // Post message to opener (Freshdesk via TamperMonkey)
+    const target = window.opener || window.parent;
+    const targetOrigin = this._openerOrigin || '*';
+    if (target && target !== window && !target.closed) {
+      target.postMessage(
+        {
+          type: 'INSERT_INTO_CRM',
+          draft: text,
+          strategy: this._currentStrategy,
+        },
+        targetOrigin
+      );
+    }
 
     this.showToast('Draft inserted into CRM');
   }
@@ -958,15 +964,19 @@ class AISidecar {
       // Mark this ticket as processed
       this._lastProcessedTicketId = draftForTicketId;
 
-      // Emit DRAFT_READY to parent (TamperMonkey) for auto-insert
+      // Emit DRAFT_READY to opener (Freshdesk via TamperMonkey)
       const draftText = this.draftTextarea ? this.draftTextarea.value : '';
       if (draftText) {
-        window.parent.postMessage({
-          type: 'DRAFT_READY',
-          draft: draftText,
-          ticket_id: draftForTicketId,
-        }, '*');
-        console.log('[sidecar] DRAFT_READY emitted, ticket:', draftForTicketId, 'length:', draftText.length);
+        const draftTarget = window.opener || window.parent;
+        const draftOrigin = this._openerOrigin || '*';
+        if (draftTarget && draftTarget !== window && !draftTarget.closed) {
+          draftTarget.postMessage({
+            type: 'DRAFT_READY',
+            draft: draftText,
+            ticket_id: draftForTicketId,
+          }, draftOrigin);
+          console.log('[sidecar] DRAFT_READY emitted to opener, ticket:', draftForTicketId, 'length:', draftText.length);
+        }
       }
 
       // Auto-load review data after successful draft
