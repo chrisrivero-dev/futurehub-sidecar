@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Sidecar → Freshdesk Auto Draft (v7.0)
+// @name         Sidecar → Freshdesk Auto Draft (v8.0)
 // @namespace    sidecar
-// @version      7.0
-// @description  Full-auto: injects iframe, sends TICKET_DATA, listens for DRAFT_READY, auto-inserts into editor
-// @match        https://*.freshdesk.com/a/tickets/*
+// @version      8.0
+// @description  SPA-aware: injects/hides iframe on ticket routes, auto-inserts drafts
+// @match        https://*.freshdesk.com/*
 // @grant        none
 // ==/UserScript==
 
@@ -13,10 +13,11 @@
   var SIDECAR_BASE = "https://futurehub-sidecar-production.up.railway.app";
   var SIDECAR_PATH = "/sidecar/";
   var IFRAME_ID = "sidecar-iframe";
-  var POLL_INTERVAL = 1500;
+  var ROUTE_CHECK_MS = 800;
   var LOG = "[TM]";
 
   var lastSentTicketId = null;
+  var lastPath = null;
 
   function log() {
     var args = [LOG];
@@ -25,15 +26,19 @@
   }
 
   // -------------------------------------------------
-  // 1. Extract ticket ID from Freshdesk SPA URL
+  // Route detection
   // -------------------------------------------------
   function getTicketId() {
     var match = window.location.pathname.match(/\/a\/tickets\/(\d+)/);
     return match ? parseInt(match[1], 10) : null;
   }
 
+  function isTicketRoute() {
+    return /\/a\/tickets\/\d+/.test(window.location.pathname);
+  }
+
   // -------------------------------------------------
-  // 2. Scrape ticket subject from DOM
+  // DOM scraping
   // -------------------------------------------------
   function extractSubject() {
     var el =
@@ -49,9 +54,6 @@
     return firstLine.replace("Add AI summary", "").trim();
   }
 
-  // -------------------------------------------------
-  // 3. Scrape latest customer message from DOM
-  // -------------------------------------------------
   function extractDescription() {
     var descEl = document.querySelector(".ticket-description .text__content");
     if (descEl) {
@@ -74,22 +76,32 @@
   }
 
   // -------------------------------------------------
-  // 4. Find or inject the sidecar iframe
+  // Iframe management
   // -------------------------------------------------
-  function getOrCreateIframe() {
-    var iframe = document.getElementById(IFRAME_ID);
-    if (iframe) return iframe;
+  function getIframe() {
+    return document.getElementById(IFRAME_ID);
+  }
 
+  function showIframe() {
+    var iframe = getIframe();
+    if (iframe) {
+      iframe.style.display = "";
+      return iframe;
+    }
+
+    // Check for marketplace iframe first
     var marketplaceIframes = document.querySelectorAll(
       'iframe[src*="futurehub-sidecar"], iframe[src*="railway.app"]'
     );
     if (marketplaceIframes.length > 0) {
       iframe = marketplaceIframes[0];
       iframe.id = IFRAME_ID;
+      iframe._loaded = true;
       log("Found existing marketplace iframe");
       return iframe;
     }
 
+    // Create new
     iframe = document.createElement("iframe");
     iframe.id = IFRAME_ID;
     iframe.src = SIDECAR_BASE + SIDECAR_PATH;
@@ -97,14 +109,27 @@
       "position:fixed;right:0;top:60px;width:420px;height:calc(100vh - 60px);" +
       "border:none;z-index:99999;background:#fff;box-shadow:-2px 0 8px rgba(0,0,0,0.12);";
     document.body.appendChild(iframe);
+
+    iframe.addEventListener("load", function () {
+      iframe._loaded = true;
+    }, { once: true });
+
     log("Injected sidecar iframe");
     return iframe;
   }
 
+  function hideIframe() {
+    var iframe = getIframe();
+    if (iframe) {
+      iframe.style.display = "none";
+    }
+  }
+
   // -------------------------------------------------
-  // 5. Send TICKET_DATA to iframe via postMessage
+  // Send TICKET_DATA
   // -------------------------------------------------
   function sendTicketData(iframe, ticketId, subject, description) {
+    if (!iframe || !iframe.contentWindow) return;
     var message = {
       type: "TICKET_DATA",
       ticket: {
@@ -114,24 +139,21 @@
         customer_name: ""
       }
     };
-
     log("Sending ticket ID:", ticketId, "subject:", subject.slice(0, 60));
     iframe.contentWindow.postMessage(message, SIDECAR_BASE);
   }
 
   // -------------------------------------------------
-  // 6. Insert draft text into Freshdesk Froala editor
+  // Insert into Froala editor
   // -------------------------------------------------
   function insertIntoEditor(draftText) {
     if (!draftText) return;
 
-    // Open reply editor if not already open
     var replyBtn =
       document.querySelector('button[data-test-id="ticket-action-reply"]') ||
       document.querySelector('button[aria-label="Reply"]');
     if (replyBtn) replyBtn.click();
 
-    // Wait for Froala editor, then inject
     var attempts = 0;
     var editorInterval = setInterval(function () {
       var editor = document.querySelector(
@@ -150,49 +172,47 @@
   }
 
   // -------------------------------------------------
-  // 7. Main loop — detect ticket, scrape, send
+  // Route watcher — single interval handles all SPA nav
   // -------------------------------------------------
-  function poll() {
+  function routeCheck() {
+    var currentPath = window.location.pathname;
+    var pathChanged = currentPath !== lastPath;
+    lastPath = currentPath;
+
+    if (!isTicketRoute()) {
+      // Not on a ticket page — hide iframe, reset state
+      hideIframe();
+      if (pathChanged) {
+        lastSentTicketId = null;
+      }
+      return;
+    }
+
+    // On a ticket page
     var ticketId = getTicketId();
     if (!ticketId) return;
 
+    var iframe = showIframe();
+
+    // Only send data once per ticket
     if (ticketId === lastSentTicketId) return;
 
     var subject = extractSubject();
     var description = extractDescription();
-
-    if (!subject && !description) {
-      log("Waiting for DOM content for ticket", ticketId);
-      return;
-    }
-
-    var iframe = getOrCreateIframe();
+    if (!subject && !description) return; // DOM not ready yet
 
     if (!iframe._loaded) {
-      iframe.addEventListener(
-        "load",
-        function () {
-          iframe._loaded = true;
-          log("Iframe loaded, dispatching TICKET_DATA");
-          sendTicketData(iframe, ticketId, subject, description);
-          lastSentTicketId = ticketId;
-        },
-        { once: true }
-      );
-      if (iframe.contentWindow) {
-        try {
-          setTimeout(function () {
-            if (!iframe._loaded) {
-              iframe._loaded = true;
-              log("Iframe ready (timeout fallback), dispatching TICKET_DATA");
-              sendTicketData(iframe, ticketId, subject, description);
-              lastSentTicketId = ticketId;
-            }
-          }, 2000);
-        } catch (_e) {
-          // cross-origin, wait for load event
-        }
-      }
+      // Wait for load then send
+      var onLoad = function () {
+        iframe._loaded = true;
+        sendTicketData(iframe, ticketId, subject, description);
+        lastSentTicketId = ticketId;
+      };
+      iframe.addEventListener("load", onLoad, { once: true });
+      // Timeout fallback
+      setTimeout(function () {
+        if (!iframe._loaded) onLoad();
+      }, 2000);
       return;
     }
 
@@ -201,27 +221,27 @@
   }
 
   // -------------------------------------------------
-  // 8. Listen for DRAFT_READY from sidecar (auto-insert)
+  // Listen for messages from sidecar
   // -------------------------------------------------
   window.addEventListener("message", function (event) {
     if (!event.data) return;
 
     if (event.data.type === "DRAFT_READY") {
-      log("Received DRAFT_READY from sidecar, length:", (event.data.draft || "").length);
+      log("Received DRAFT_READY, length:", (event.data.draft || "").length);
       insertIntoEditor(event.data.draft || "");
       return;
     }
 
-    // Backward compat: also handle INSERT_INTO_CRM (manual button)
     if (event.data.type === "INSERT_INTO_CRM") {
-      log("Received INSERT_INTO_CRM from sidecar");
+      log("Received INSERT_INTO_CRM");
       insertIntoEditor(event.data.draft || "");
     }
   });
 
   // -------------------------------------------------
-  // 9. Start polling
+  // Start
   // -------------------------------------------------
-  setInterval(poll, POLL_INTERVAL);
-  log("v7.0 loaded — DRAFT_READY auto-insert active");
+  setInterval(routeCheck, ROUTE_CHECK_MS);
+  routeCheck(); // immediate first check
+  log("v8.0 loaded — SPA-aware route watcher active");
 })();

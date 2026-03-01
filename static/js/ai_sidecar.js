@@ -352,11 +352,16 @@ class AISidecar {
           <strong>KB Recommendations:</strong>
           <ul style="margin:6px 0 0 0;padding-left:18px;">
             ${kbs.map(kb => {
-              const url = kb.url || kb.article_url || '#';
               const title = kb.title || `Article #${kb.id || ''}`;
-              return `<li><a href="${url}" target="_blank" rel="noopener" class="kb-link" data-id="${kb.id || ''}">${title}</a></li>`;
+              return `<li style="margin-bottom:4px;"><span class="kb-link" data-id="${kb.id || ''}">${title}</span></li>`;
             }).join('')}
           </ul>
+        </div>`;
+    } else {
+      kbHtml = `
+        <div style="margin-top:10px;">
+          <strong>KB Recommendations:</strong>
+          <p style="margin:6px 0 0 0;color:#6b7280;font-size:13px;">No matches yet</p>
         </div>`;
     }
 
