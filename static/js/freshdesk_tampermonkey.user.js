@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Sidecar → Freshdesk Auto Draft (FINAL STABLE)
+// @name         Sidecar → Freshdesk Auto Draft (v7.0)
 // @namespace    sidecar
-// @version      6.0
-// @description  Sends ticket data to sidecar iframe via postMessage
+// @version      7.0
+// @description  Full-auto: injects iframe, sends TICKET_DATA, listens for DRAFT_READY, auto-inserts into editor
 // @match        https://*.freshdesk.com/a/tickets/*
 // @grant        none
 // ==/UserScript==
@@ -10,24 +10,25 @@
 (function () {
   "use strict";
 
-  const SIDECAR_BASE = "https://futurehub-sidecar-production.up.railway.app";
-  const SIDECAR_PATH = "/sidecar/";
-  const IFRAME_ID = "sidecar-iframe";
-  const POLL_INTERVAL = 1500;
-  const LOG = "[TM]";
+  var SIDECAR_BASE = "https://futurehub-sidecar-production.up.railway.app";
+  var SIDECAR_PATH = "/sidecar/";
+  var IFRAME_ID = "sidecar-iframe";
+  var POLL_INTERVAL = 1500;
+  var LOG = "[TM]";
 
-  let lastSentTicketId = null;
+  var lastSentTicketId = null;
 
-  function log(...args) {
-    console.log(LOG, ...args);
+  function log() {
+    var args = [LOG];
+    for (var i = 0; i < arguments.length; i++) args.push(arguments[i]);
+    console.log.apply(console, args);
   }
 
   // -------------------------------------------------
   // 1. Extract ticket ID from Freshdesk SPA URL
-  //    Format: /a/tickets/17 or /a/tickets/17/...
   // -------------------------------------------------
   function getTicketId() {
-    const match = window.location.pathname.match(/\/a\/tickets\/(\d+)/);
+    var match = window.location.pathname.match(/\/a\/tickets\/(\d+)/);
     return match ? parseInt(match[1], 10) : null;
   }
 
@@ -35,13 +36,13 @@
   // 2. Scrape ticket subject from DOM
   // -------------------------------------------------
   function extractSubject() {
-    const el =
+    var el =
       document.querySelector('[data-testid="ticket-subject"]') ||
       document.querySelector(".ticket-subject-heading") ||
       document.querySelector(".ticket-header") ||
       document.querySelector('[class*="subject"]');
     if (!el) return "";
-    const firstLine = (el.innerText || "")
+    var firstLine = (el.innerText || "")
       .split("\n")
       .map(function (s) { return s.trim(); })
       .filter(Boolean)[0] || "";
@@ -52,15 +53,13 @@
   // 3. Scrape latest customer message from DOM
   // -------------------------------------------------
   function extractDescription() {
-    // Try the ticket description first
-    const descEl = document.querySelector(".ticket-description .text__content");
+    var descEl = document.querySelector(".ticket-description .text__content");
     if (descEl) {
-      const text = (descEl.innerText || "").trim();
+      var text = (descEl.innerText || "").trim();
       if (text.length > 20) return text;
     }
-    // Fall back to longest conversation node
-    const nodes = Array.from(document.querySelectorAll(".text__content"));
-    const texts = nodes
+    var nodes = Array.from(document.querySelectorAll(".text__content"));
+    var texts = nodes
       .map(function (n) { return (n.innerText || "").trim(); })
       .filter(function (t) {
         return t.length > 40 &&
@@ -81,7 +80,6 @@
     var iframe = document.getElementById(IFRAME_ID);
     if (iframe) return iframe;
 
-    // Look for existing Freshdesk Marketplace sidebar iframe
     var marketplaceIframes = document.querySelectorAll(
       'iframe[src*="futurehub-sidecar"], iframe[src*="railway.app"]'
     );
@@ -92,7 +90,6 @@
       return iframe;
     }
 
-    // Inject our own sidebar iframe
     iframe = document.createElement("iframe");
     iframe.id = IFRAME_ID;
     iframe.src = SIDECAR_BASE + SIDECAR_PATH;
@@ -119,24 +116,51 @@
     };
 
     log("Sending ticket ID:", ticketId, "subject:", subject.slice(0, 60));
-
     iframe.contentWindow.postMessage(message, SIDECAR_BASE);
   }
 
   // -------------------------------------------------
-  // 6. Main loop — detect ticket, scrape, send
+  // 6. Insert draft text into Freshdesk Froala editor
+  // -------------------------------------------------
+  function insertIntoEditor(draftText) {
+    if (!draftText) return;
+
+    // Open reply editor if not already open
+    var replyBtn =
+      document.querySelector('button[data-test-id="ticket-action-reply"]') ||
+      document.querySelector('button[aria-label="Reply"]');
+    if (replyBtn) replyBtn.click();
+
+    // Wait for Froala editor, then inject
+    var attempts = 0;
+    var editorInterval = setInterval(function () {
+      var editor = document.querySelector(
+        "div.fr-element.fr-view[contenteditable='true']"
+      );
+      if (editor && editor.offsetParent !== null) {
+        clearInterval(editorInterval);
+        editor.focus();
+        editor.innerHTML = draftText.replace(/\n/g, "<br>");
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+        log("Draft auto-inserted into Freshdesk editor");
+      }
+      attempts++;
+      if (attempts > 40) clearInterval(editorInterval);
+    }, 250);
+  }
+
+  // -------------------------------------------------
+  // 7. Main loop — detect ticket, scrape, send
   // -------------------------------------------------
   function poll() {
     var ticketId = getTicketId();
     if (!ticketId) return;
 
-    // Only re-send when navigating to a different ticket
     if (ticketId === lastSentTicketId) return;
 
     var subject = extractSubject();
     var description = extractDescription();
 
-    // Wait until DOM has loaded enough content
     if (!subject && !description) {
       log("Waiting for DOM content for ticket", ticketId);
       return;
@@ -144,7 +168,6 @@
 
     var iframe = getOrCreateIframe();
 
-    // If iframe just injected, wait for it to load before posting
     if (!iframe._loaded) {
       iframe.addEventListener(
         "load",
@@ -156,11 +179,8 @@
         },
         { once: true }
       );
-      // If already loaded (cached), the load event won't fire again
       if (iframe.contentWindow) {
         try {
-          // Test if contentWindow is accessible (same won't be for cross-origin,
-          // but postMessage still works)
           setTimeout(function () {
             if (!iframe._loaded) {
               iframe._loaded = true;
@@ -181,43 +201,27 @@
   }
 
   // -------------------------------------------------
-  // 7. Listen for INSERT_INTO_CRM from sidecar
+  // 8. Listen for DRAFT_READY from sidecar (auto-insert)
   // -------------------------------------------------
   window.addEventListener("message", function (event) {
-    if (!event.data || event.data.type !== "INSERT_INTO_CRM") return;
+    if (!event.data) return;
 
-    log("Received INSERT_INTO_CRM from sidecar");
+    if (event.data.type === "DRAFT_READY") {
+      log("Received DRAFT_READY from sidecar, length:", (event.data.draft || "").length);
+      insertIntoEditor(event.data.draft || "");
+      return;
+    }
 
-    var draft = event.data.draft || "";
-    if (!draft) return;
-
-    // Open reply editor if not already open
-    var replyBtn =
-      document.querySelector('button[data-test-id="ticket-action-reply"]') ||
-      document.querySelector('button[aria-label="Reply"]');
-    if (replyBtn) replyBtn.click();
-
-    // Wait for Froala editor, then inject
-    var attempts = 0;
-    var editorInterval = setInterval(function () {
-      var editor = document.querySelector(
-        "div.fr-element.fr-view[contenteditable='true']"
-      );
-      if (editor && editor.offsetParent !== null) {
-        clearInterval(editorInterval);
-        editor.focus();
-        editor.innerHTML = draft.replace(/\n/g, "<br>");
-        editor.dispatchEvent(new Event("input", { bubbles: true }));
-        log("Draft inserted into Freshdesk editor");
-      }
-      attempts++;
-      if (attempts > 40) clearInterval(editorInterval);
-    }, 250);
+    // Backward compat: also handle INSERT_INTO_CRM (manual button)
+    if (event.data.type === "INSERT_INTO_CRM") {
+      log("Received INSERT_INTO_CRM from sidecar");
+      insertIntoEditor(event.data.draft || "");
+    }
   });
 
   // -------------------------------------------------
-  // 8. Start polling
+  // 9. Start polling
   // -------------------------------------------------
   setInterval(poll, POLL_INTERVAL);
-  log("v6.0 loaded — postMessage bridge active");
+  log("v7.0 loaded — DRAFT_READY auto-insert active");
 })();

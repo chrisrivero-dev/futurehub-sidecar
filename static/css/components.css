@@ -59,8 +59,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 
-  padding: 18px 24px;
+  padding: 14px 16px;
   margin: 0 var(--spacing-lg) var(--spacing-lg);
 
   background: linear-gradient(to right,
@@ -69,6 +70,7 @@
 
   border: 2px solid #2f2f2f;
   border-radius: 16px;
+  overflow: visible;
 
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
 }
@@ -115,6 +117,8 @@
   border-radius: 999px;
   border: 2px solid #2f2f2f;
   background: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Updated badge */
@@ -133,7 +137,9 @@
 .header-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .collapse-chevron {
@@ -355,16 +361,17 @@
 #reset-btn {
   width: 28px;
   height: 28px;
+  min-width: 28px;
   background: transparent;
   border: 1px solid var(--color-border);
   color: var(--color-text-muted);
+  flex-shrink: 0;
 }
 
 .sidecar-header .btn-icon:hover,
 #reset-btn:hover {
   background: #e5e7eb;
   color: var(--color-text);
-  background-color: transparent;
 }
 
 .sidecar-header .btn-icon .icon,

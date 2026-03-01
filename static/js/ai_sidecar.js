@@ -446,12 +446,24 @@ class AISidecar {
   // Collapse / Expand
   // -----------------------------
   bindCollapseToggle() {
+    const STORAGE_KEY = 'sidecar_collapsed';
     const toggleBtn = document.getElementById('collapse-toggle');
     const wrapper = document.querySelector('.sidecar-wrapper');
     if (!toggleBtn || !wrapper) return;
 
     const chevron = toggleBtn.querySelector('.collapse-chevron');
+
+    // Restore persisted state
     let isCollapsed = false;
+    try {
+      isCollapsed = localStorage.getItem(STORAGE_KEY) === '1';
+    } catch (_e) { /* storage unavailable */ }
+
+    if (isCollapsed) {
+      wrapper.classList.add('sidecar-collapsed');
+      toggleBtn.setAttribute('aria-expanded', 'false');
+      if (chevron) chevron.style.transform = 'rotate(180deg)';
+    }
 
     toggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -465,6 +477,11 @@ class AISidecar {
           ? 'rotate(180deg)'
           : 'rotate(0deg)';
       }
+
+      // Persist state
+      try {
+        localStorage.setItem(STORAGE_KEY, isCollapsed ? '1' : '0');
+      } catch (_e) { /* storage unavailable */ }
     });
   }
 
@@ -880,6 +897,16 @@ class AISidecar {
 
       console.log('[sidecar] Draft response:', data);
       this.renderResponse(data);
+
+      // Emit DRAFT_READY to parent (TamperMonkey) for auto-insert
+      const draftText = this.draftTextarea ? this.draftTextarea.value : '';
+      if (draftText) {
+        window.parent.postMessage({
+          type: 'DRAFT_READY',
+          draft: draftText,
+        }, '*');
+        console.log('[sidecar] DRAFT_READY emitted, length:', draftText.length);
+      }
 
       // Auto-load review data after successful draft
       if (this._currentTicketId) {
