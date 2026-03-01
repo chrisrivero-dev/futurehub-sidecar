@@ -4,15 +4,13 @@
 // -----------------------------------------------------------
 // State lock: ensure auto-run fires only once per ticket URL
 // -----------------------------------------------------------
-
-// Queue for TICKET_DATA messages that arrive before AISidecar is ready
-let _pendingTicketData = null;
+let _lastAutoRunTicketKey = null;
 
 window.addEventListener('message', (event) => {
   if (!event.data || event.data.type !== 'TICKET_DATA') return;
 
   const ticket = event.data.ticket;
-  console.log('[sidecar] Received TICKET_DATA:', JSON.stringify(event.data));
+  console.log('[sidecar] Received TICKET_DATA:', ticket);
 
   const subject = document.getElementById('subject');
   const latest = document.getElementById('latest-message');
@@ -26,47 +24,21 @@ window.addEventListener('message', (event) => {
     customerName.value = ticket.customer_name;
   }
 
-  if (!window.aiSidecar) {
-    // AISidecar not ready yet — queue for replay after init
-    console.log('[sidecar] AISidecar not ready, queuing TICKET_DATA for ticket:', ticket.id);
-    _pendingTicketData = { ticket, origin: event.origin };
-    return;
+  // Store ticket id for review mode
+  if (window.aiSidecar) {
+    window.aiSidecar._currentTicketId = ticket.id || null;
+    if (typeof window.aiSidecar._showReviewButton === 'function') {
+      window.aiSidecar._showReviewButton();
+    }
   }
 
-  _applyTicketData(window.aiSidecar, ticket, event.origin);
+  // Auto-run draft pipeline once per unique ticket
+  const ticketKey = `${ticket.id || ''}_${ticket.subject || ''}`;
+  if (window.aiSidecar && ticketKey !== _lastAutoRunTicketKey) {
+    _lastAutoRunTicketKey = ticketKey;
+    window.aiSidecar.autoRunDraft();
+  }
 }); // ✅ CLOSES window.addEventListener('message', ...)
-
-function _applyTicketData(sidecar, ticket, origin) {
-  const prevTicketId = sidecar._currentTicketId;
-  sidecar._currentTicketId = ticket.id || null;
-  sidecar._currentTicketData = ticket;
-  sidecar._openerOrigin = origin || '*';
-
-  console.log('[sidecar] _currentTicketId set to:', sidecar._currentTicketId, 'origin:', sidecar._openerOrigin);
-
-  // Extract domain from event origin
-  try {
-    sidecar._freshdeskDomain = origin
-      ? new URL(origin).hostname
-      : null;
-  } catch (_e) {
-    sidecar._freshdeskDomain = null;
-  }
-
-  // Clear stale draft when ticket changes
-  if (ticket.id && ticket.id !== prevTicketId) {
-    sidecar._clearDraftState();
-  }
-
-  if (typeof sidecar._showReviewButton === 'function') {
-    sidecar._showReviewButton();
-  }
-
-  // Auto-run only if this ticket hasn't been processed yet
-  if (ticket.id && ticket.id !== sidecar._lastProcessedTicketId) {
-    sidecar.autoRunDraft();
-  }
-}
 
 // -----------------------------------------------------------
 // Helper text inserted by Suggested Actions
@@ -131,7 +103,6 @@ class AISidecar {
     this._currentStrategy = null;
     this._variableVerification = null;
     this._isAutoRunning = false;
-    this._freshdeskDomain = null;
 
     // Lifecycle state
     this._currentTicketId = null;
@@ -171,24 +142,6 @@ class AISidecar {
     container.id = 'review-mode-container';
     container.style.display = 'none';
     this.panel.appendChild(container);
-  }
-
-  _clearDraftState() {
-    // Wipe stale draft so it can't bleed into a new ticket
-    if (this.draftTextarea) this.draftTextarea.value = '';
-    this.responseContainer?.classList.add('hidden');
-    this.emptyState?.classList.remove('hidden');
-    document.getElementById('auto-send-card')?.classList.add('hidden');
-
-    const statusEl = document.getElementById('auto-run-status');
-    if (statusEl) {
-      statusEl.textContent = 'Waiting for draft...';
-      statusEl.className = 'auto-run-status status-loading';
-    }
-
-    // Remove review panel from previous ticket
-    const reviewPanel = document.getElementById('review-data-panel');
-    if (reviewPanel) reviewPanel.remove();
   }
 
   _showReviewButton() {
@@ -353,96 +306,6 @@ class AISidecar {
   }
 
   // -----------------------------
-  // Load review data after draft completes
-  // -----------------------------
-  async loadReviewData(ticketId) {
-    if (!ticketId) return;
-
-    try {
-      const res = await fetch(`/api/v1/tickets/${ticketId}/review`);
-      if (!res.ok) return;
-
-      const data = await res.json();
-      if (!data.success) return;
-
-      this._renderReviewPanel(data);
-      this._showReviewButton();
-    } catch (err) {
-      console.warn('[sidecar] Review data load failed:', err);
-    }
-  }
-
-  _renderReviewPanel(data) {
-    let panel = document.getElementById('review-data-panel');
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.id = 'review-data-panel';
-      panel.className = 'section-card';
-      const responseContainer = document.getElementById('response-container');
-      if (responseContainer) {
-        responseContainer.appendChild(panel);
-      } else {
-        return;
-      }
-    }
-
-    const d = data.draft_summary || {};
-    const l = data.lifecycle || {};
-    const kbs = data.kb_recommendations || [];
-    const subject = data.subject || '';
-    const originalMsg = data.original_message || '';
-    const finalReply = data.final_reply || '';
-
-    let kbHtml = '';
-    if (kbs.length > 0) {
-      kbHtml = `
-        <div style="margin-top:10px;">
-          <strong>KB Recommendations:</strong>
-          <ul style="margin:6px 0 0 0;padding-left:18px;">
-            ${kbs.map(kb => {
-              const title = kb.title || `Article #${kb.id || ''}`;
-              return `<li style="margin-bottom:4px;"><span class="kb-link" data-id="${kb.id || ''}">${title}</span></li>`;
-            }).join('')}
-          </ul>
-        </div>`;
-    } else {
-      kbHtml = `
-        <div style="margin-top:10px;">
-          <strong>KB Recommendations:</strong>
-          <p style="margin:6px 0 0 0;color:#6b7280;font-size:13px;">No matches yet</p>
-        </div>`;
-    }
-
-    let contextHtml = '';
-    if (subject || originalMsg || finalReply) {
-      contextHtml = `
-        <div style="margin-top:10px;">
-          <strong>Ticket Context:</strong>
-          ${subject ? `<p style="margin:4px 0;"><em>Subject:</em> ${subject}</p>` : ''}
-          ${originalMsg ? `<p style="margin:4px 0;"><em>Customer Message:</em> ${originalMsg.length > 200 ? originalMsg.slice(0, 200) + '...' : originalMsg}</p>` : ''}
-          ${finalReply ? `<p style="margin:4px 0;"><em>Agent Reply:</em> ${finalReply.length > 200 ? finalReply.slice(0, 200) + '...' : finalReply}</p>` : ''}
-        </div>`;
-    }
-
-    panel.innerHTML = `
-      <div class="section-header">
-        <h2 class="section-title">Review Intelligence</h2>
-      </div>
-      <div class="section-body">
-        <p><strong>Intent:</strong> ${d.intent || '—'}
-           <strong style="margin-left:12px;">Risk:</strong> ${d.risk_category || '—'}
-           <strong style="margin-left:12px;">Confidence:</strong> ${d.confidence != null ? Math.round(d.confidence * 100) + '%' : '—'}</p>
-        <p><strong>Outbound:</strong> ${l.outbound_count || 0}
-           <strong style="margin-left:12px;">Inbound:</strong> ${l.inbound_count || 0}
-           <strong style="margin-left:12px;">Edited:</strong> ${l.edited_count > 0 ? 'Yes' : 'No'}
-           <strong style="margin-left:12px;">Follow-up:</strong> ${l.followup_detected ? 'Yes' : 'No'}</p>
-        ${contextHtml}
-        ${kbHtml}
-      </div>
-    `;
-  }
-
-  // -----------------------------
   // Analytics Summary
   // -----------------------------
   async loadAnalyticsSummary() {
@@ -490,7 +353,7 @@ class AISidecar {
       this.hideAutoSendCard();
       this._clearMissingVariableChips();
       this._setInsertCrmEnabled(false);
-      this._lastProcessedTicketId = null; // allow re-run on next ticket
+      _lastAutoRunTicketKey = null; // allow re-run on next ticket
       this.showToast('Form cleared');
     });
   }
@@ -499,24 +362,12 @@ class AISidecar {
   // Collapse / Expand
   // -----------------------------
   bindCollapseToggle() {
-    const STORAGE_KEY = 'sidecar_collapsed';
     const toggleBtn = document.getElementById('collapse-toggle');
     const wrapper = document.querySelector('.sidecar-wrapper');
     if (!toggleBtn || !wrapper) return;
 
     const chevron = toggleBtn.querySelector('.collapse-chevron');
-
-    // Restore persisted state
     let isCollapsed = false;
-    try {
-      isCollapsed = localStorage.getItem(STORAGE_KEY) === '1';
-    } catch (_e) { /* storage unavailable */ }
-
-    if (isCollapsed) {
-      wrapper.classList.add('sidecar-collapsed');
-      toggleBtn.setAttribute('aria-expanded', 'false');
-      if (chevron) chevron.style.transform = 'rotate(180deg)';
-    }
 
     toggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -530,11 +381,6 @@ class AISidecar {
           ? 'rotate(180deg)'
           : 'rotate(0deg)';
       }
-
-      // Persist state
-      try {
-        localStorage.setItem(STORAGE_KEY, isCollapsed ? '1' : '0');
-      } catch (_e) { /* storage unavailable */ }
     });
   }
 
@@ -617,11 +463,6 @@ class AISidecar {
   autoRunDraft() {
     if (this._isAutoRunning) return;
 
-    if (!this._currentTicketId) {
-      console.log('[sidecar] Auto-run blocked: _currentTicketId is null');
-      return;
-    }
-
     const subject = document.getElementById('subject');
     const latest = document.getElementById('latest-message');
 
@@ -630,7 +471,7 @@ class AISidecar {
       return;
     }
 
-    console.log('[sidecar] Auto-running draft pipeline, _currentTicketId:', this._currentTicketId);
+    console.log('[sidecar] Auto-running draft pipeline');
     this._isAutoRunning = true;
     this.generateDraft().finally(() => {
       this._isAutoRunning = false;
@@ -694,12 +535,19 @@ class AISidecar {
         /* never delay Send */
       }
     }
-  // Mailbox transport — no postMessage
-  window.__SIDECAR_DRAFT__ = text;
-  window.__SIDECAR_DRAFT_TS__ = Date.now();
-  window.__SIDECAR_STRATEGY__ = this._currentStrategy;
 
-  this.showToast('Draft ready for injection');
+    // Post message to parent (Freshdesk extension host)
+    window.parent.postMessage(
+      {
+        type: 'INSERT_INTO_CRM',
+        draft: text,
+        strategy: this._currentStrategy,
+      },
+      '*'
+    );
+
+    this.showToast('Draft inserted into CRM');
+  }
 
   // -----------------------------
   // Auto-Send Card Methods
@@ -851,20 +699,28 @@ class AISidecar {
   async generateDraft() {
     if (!this.form) return;
 
-    console.log('[sidecar] generateDraft called, _currentTicketId:', this._currentTicketId);
-
-    // Snapshot the ticket ID at call time for stale-draft guard
-    const draftForTicketId = this._currentTicketId;
-
     const formData = new FormData(this.form);
+
+    const ticketIdFromQuery = Number(
+      new URLSearchParams(window.location.search).get('ticket_id')
+    );
+    const ticketIdFromPath = Number(window.location.pathname.split('/').pop());
+    const freshdeskTicketId =
+      Number.isFinite(ticketIdFromQuery) && ticketIdFromQuery
+        ? ticketIdFromQuery
+        : Number.isFinite(ticketIdFromPath) && ticketIdFromPath
+          ? ticketIdFromPath
+          : null;
 
     const payload = {
       subject: formData.get('subject'),
       latest_message: formData.get('latest_message'),
       conversation_history: [],
       customer_name: formData.get('customer_name') || undefined,
-      freshdesk_ticket_id: this._currentTicketId || undefined,
-      freshdesk_domain: this._freshdeskDomain || undefined,
+
+      // ✅ REQUIRED FOR REVIEW HYDRATION
+      freshdesk_ticket_id: freshdeskTicketId,
+      freshdesk_domain: window.location.hostname,
     };
 
     // Show loading state
@@ -939,37 +795,7 @@ class AISidecar {
       }
 
       console.log('[sidecar] Draft response:', data);
-
-      // Guard: discard response if ticket changed while awaiting
-      if (draftForTicketId && draftForTicketId !== this._currentTicketId) {
-        console.warn('[sidecar] Discarding stale draft for ticket', draftForTicketId);
-        return;
-      }
-
       this.renderResponse(data);
-
-      // Mark this ticket as processed
-      this._lastProcessedTicketId = draftForTicketId;
-
-      // Emit DRAFT_READY to opener (Freshdesk via TamperMonkey)
-      const draftText = this.draftTextarea ? this.draftTextarea.value : '';
-      if (draftText) {
-        const draftTarget = window.opener || window.parent;
-        const draftOrigin = this._openerOrigin || '*';
-        if (draftTarget && draftTarget !== window && !draftTarget.closed) {
-          draftTarget.postMessage({
-            type: 'DRAFT_READY',
-            draft: draftText,
-            ticket_id: draftForTicketId,
-          }, draftOrigin);
-          console.log('[sidecar] DRAFT_READY emitted to opener, ticket:', draftForTicketId, 'length:', draftText.length);
-        }
-      }
-
-      // Auto-load review data after successful draft
-      if (this._currentTicketId) {
-        this.loadReviewData(this._currentTicketId);
-      }
     } catch (error) {
       console.error('Draft error:', error);
       this.showToast(
