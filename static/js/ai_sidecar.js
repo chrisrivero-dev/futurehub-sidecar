@@ -110,7 +110,31 @@ class AISidecar {
     this.loadCannedResponses();
     this.initReviewMode();
     this.loadAnalyticsSummary(); // ← ADD THIS
+    // -------------------------------------
+    // BroadcastChannel Bridge (Freshdesk)
+    // -------------------------------------
+    this.bridgeChannel = new BroadcastChannel('sidecar-bridge');
+
+    this.bridgeChannel.onmessage = (event) => {
+      if (event.data?.type === 'TICKET_DATA') {
+        const ticket = event.data.ticket;
+
+        this._currentTicketId = ticket.id;
+        this._currentTicketData = ticket;
+
+        const subjectField = document.getElementById('subject');
+        const latestField = document.getElementById('latest-message');
+
+        if (subjectField) subjectField.value = ticket.subject || '';
+        if (latestField) latestField.value = ticket.description_text || '';
+
+        console.log('[Sidecar] Received ticket:', ticket.id);
+
+        this.generateDraft();
+      }
+    };
   }
+
   initReviewMode() {
     this._currentTicketId = null;
     this._inReviewMode = false;
@@ -717,6 +741,14 @@ class AISidecar {
 
       console.log('[sidecar] Draft response:', data);
       this.renderResponse(data);
+
+      // SEND BACK TO FRESHDESK
+      if (this.bridgeChannel) {
+        this.bridgeChannel.postMessage({
+          type: 'DRAFT_READY',
+          draft: data.draft?.response_text || data.draft,
+        });
+      }
     } catch (error) {
       console.error('Draft error:', error);
       this.showToast(
