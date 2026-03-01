@@ -950,7 +950,11 @@ def review_ticket(ticket_id):
                     "followup_detected": followup_detected,
                     "reopened": reopened,
                 },
-                "kb_recommendations": [],
+                "kb_recommendations": _match_templates(
+                    latest_draft.intent if latest_draft else "",
+                    original_message,
+                    _load_canned_responses(),
+                ),
             }
         finally:
             session.close()

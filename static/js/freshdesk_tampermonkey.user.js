@@ -1,66 +1,68 @@
 // ==UserScript==
-// @name         Sidecar → Freshdesk Auto Draft (FINAL STABLE)
+// @name         Sidecar → Freshdesk Auto Draft (v9.0)
 // @namespace    sidecar
-// @version      6.0
-// @description  Sends ticket data to sidecar iframe via postMessage
-// @match        https://*.freshdesk.com/a/tickets/*
+// @version      9.0
+// @description  Standalone window: opens sidecar in separate window, postMessage bridge
+// @match        https://*.freshdesk.com/*
 // @grant        none
 // ==/UserScript==
 
 (function () {
   "use strict";
 
-  const SIDECAR_BASE = "https://futurehub-sidecar-production.up.railway.app";
-  const SIDECAR_PATH = "/sidecar/";
-  const IFRAME_ID = "sidecar-iframe";
-  const POLL_INTERVAL = 1500;
-  const LOG = "[TM]";
+  var SIDECAR_URL = "https://futurehub-sidecar-production.up.railway.app/sidecar/";
+  var SIDECAR_ORIGIN = "https://futurehub-sidecar-production.up.railway.app";
+  var WINDOW_NAME = "FH_SIDECAR_WINDOW";
+  var ROUTE_CHECK_MS = 800;
+  var LOG = "[TM]";
 
-  let lastSentTicketId = null;
+  var sidecarWindow = null;
+  var lastSentTicketId = null;
+  var lastPath = null;
 
-  function log(...args) {
-    console.log(LOG, ...args);
+  function log() {
+    var args = [LOG];
+    for (var i = 0; i < arguments.length; i++) args.push(arguments[i]);
+    console.log.apply(console, args);
   }
 
   // -------------------------------------------------
-  // 1. Extract ticket ID from Freshdesk SPA URL
-  //    Format: /a/tickets/17 or /a/tickets/17/...
+  // Route detection
   // -------------------------------------------------
   function getTicketId() {
-    const match = window.location.pathname.match(/\/a\/tickets\/(\d+)/);
+    var match = window.location.pathname.match(/\/a\/tickets\/(\d+)/);
     return match ? parseInt(match[1], 10) : null;
   }
 
+  function isTicketRoute() {
+    return /\/a\/tickets\/\d+/.test(window.location.pathname);
+  }
+
   // -------------------------------------------------
-  // 2. Scrape ticket subject from DOM
+  // DOM scraping
   // -------------------------------------------------
   function extractSubject() {
-    const el =
+    var el =
       document.querySelector('[data-testid="ticket-subject"]') ||
       document.querySelector(".ticket-subject-heading") ||
       document.querySelector(".ticket-header") ||
       document.querySelector('[class*="subject"]');
     if (!el) return "";
-    const firstLine = (el.innerText || "")
+    var firstLine = (el.innerText || "")
       .split("\n")
       .map(function (s) { return s.trim(); })
       .filter(Boolean)[0] || "";
     return firstLine.replace("Add AI summary", "").trim();
   }
 
-  // -------------------------------------------------
-  // 3. Scrape latest customer message from DOM
-  // -------------------------------------------------
   function extractDescription() {
-    // Try the ticket description first
-    const descEl = document.querySelector(".ticket-description .text__content");
+    var descEl = document.querySelector(".ticket-description .text__content");
     if (descEl) {
-      const text = (descEl.innerText || "").trim();
+      var text = (descEl.innerText || "").trim();
       if (text.length > 20) return text;
     }
-    // Fall back to longest conversation node
-    const nodes = Array.from(document.querySelectorAll(".text__content"));
-    const texts = nodes
+    var nodes = Array.from(document.querySelectorAll(".text__content"));
+    var texts = nodes
       .map(function (n) { return (n.innerText || "").trim(); })
       .filter(function (t) {
         return t.length > 40 &&
@@ -75,129 +77,76 @@
   }
 
   // -------------------------------------------------
-  // 4. Find or inject the sidecar iframe
+  // Standalone window management
   // -------------------------------------------------
-  function getOrCreateIframe() {
-    var iframe = document.getElementById(IFRAME_ID);
-    if (iframe) return iframe;
-
-    // Look for existing Freshdesk Marketplace sidebar iframe
-    var marketplaceIframes = document.querySelectorAll(
-      'iframe[src*="futurehub-sidecar"], iframe[src*="railway.app"]'
-    );
-    if (marketplaceIframes.length > 0) {
-      iframe = marketplaceIframes[0];
-      iframe.id = IFRAME_ID;
-      log("Found existing marketplace iframe");
-      return iframe;
+  function openOrReuseSidecar() {
+    if (sidecarWindow && !sidecarWindow.closed) {
+      sidecarWindow.focus();
+      return sidecarWindow;
     }
-
-    // Inject our own sidebar iframe
-    iframe = document.createElement("iframe");
-    iframe.id = IFRAME_ID;
-    iframe.src = SIDECAR_BASE + SIDECAR_PATH;
-    iframe.style.cssText =
-      "position:fixed;right:0;top:60px;width:420px;height:calc(100vh - 60px);" +
-      "border:none;z-index:99999;background:#fff;box-shadow:-2px 0 8px rgba(0,0,0,0.12);";
-    document.body.appendChild(iframe);
-    log("Injected sidecar iframe");
-    return iframe;
+    sidecarWindow = window.open(
+      SIDECAR_URL,
+      WINDOW_NAME,
+      "width=500,height=900"
+    );
+    log("Opened sidecar window");
+    return sidecarWindow;
   }
 
   // -------------------------------------------------
-  // 5. Send TICKET_DATA to iframe via postMessage
+  // Send TICKET_DATA to standalone window
   // -------------------------------------------------
-  function sendTicketData(iframe, ticketId, subject, description) {
+  function sendTicketData(ticketId, subject, description) {
+    var win = openOrReuseSidecar();
+    if (!win) {
+      log("Failed to open sidecar window");
+      return;
+    }
+
     var message = {
       type: "TICKET_DATA",
       ticket: {
         id: ticketId,
         subject: subject,
         description_text: description,
-        customer_name: ""
+        customer_name: "",
+        originDomain: window.location.hostname
       }
     };
 
-    log("Sending ticket ID:", ticketId, "subject:", subject.slice(0, 60));
-
-    iframe.contentWindow.postMessage(message, SIDECAR_BASE);
-  }
-
-  // -------------------------------------------------
-  // 6. Main loop — detect ticket, scrape, send
-  // -------------------------------------------------
-  function poll() {
-    var ticketId = getTicketId();
-    if (!ticketId) return;
-
-    // Only re-send when navigating to a different ticket
-    if (ticketId === lastSentTicketId) return;
-
-    var subject = extractSubject();
-    var description = extractDescription();
-
-    // Wait until DOM has loaded enough content
-    if (!subject && !description) {
-      log("Waiting for DOM content for ticket", ticketId);
-      return;
-    }
-
-    var iframe = getOrCreateIframe();
-
-    // If iframe just injected, wait for it to load before posting
-    if (!iframe._loaded) {
-      iframe.addEventListener(
-        "load",
-        function () {
-          iframe._loaded = true;
-          log("Iframe loaded, dispatching TICKET_DATA");
-          sendTicketData(iframe, ticketId, subject, description);
-          lastSentTicketId = ticketId;
-        },
-        { once: true }
-      );
-      // If already loaded (cached), the load event won't fire again
-      if (iframe.contentWindow) {
-        try {
-          // Test if contentWindow is accessible (same won't be for cross-origin,
-          // but postMessage still works)
-          setTimeout(function () {
-            if (!iframe._loaded) {
-              iframe._loaded = true;
-              log("Iframe ready (timeout fallback), dispatching TICKET_DATA");
-              sendTicketData(iframe, ticketId, subject, description);
-              lastSentTicketId = ticketId;
-            }
-          }, 2000);
-        } catch (_e) {
-          // cross-origin, wait for load event
+    // Window may still be loading — retry postMessage until ready
+    var sent = false;
+    var attempts = 0;
+    var sendInterval = setInterval(function () {
+      try {
+        win.postMessage(message, SIDECAR_ORIGIN);
+        if (!sent) {
+          log("Sent TICKET_DATA to sidecar, ticket:", ticketId);
+          sent = true;
         }
+        clearInterval(sendInterval);
+      } catch (_e) {
+        // Window not ready yet
       }
-      return;
-    }
-
-    sendTicketData(iframe, ticketId, subject, description);
-    lastSentTicketId = ticketId;
+      attempts++;
+      if (attempts > 20) {
+        clearInterval(sendInterval);
+        log("Failed to send TICKET_DATA after retries");
+      }
+    }, 300);
   }
 
   // -------------------------------------------------
-  // 7. Listen for INSERT_INTO_CRM from sidecar
+  // Insert into Froala editor
   // -------------------------------------------------
-  window.addEventListener("message", function (event) {
-    if (!event.data || event.data.type !== "INSERT_INTO_CRM") return;
+  function insertIntoEditor(draftText) {
+    if (!draftText) return;
 
-    log("Received INSERT_INTO_CRM from sidecar");
-
-    var draft = event.data.draft || "";
-    if (!draft) return;
-
-    // Open reply editor if not already open
     var replyBtn =
       document.querySelector('button[data-test-id="ticket-action-reply"]') ||
       document.querySelector('button[aria-label="Reply"]');
     if (replyBtn) replyBtn.click();
 
-    // Wait for Froala editor, then inject
     var attempts = 0;
     var editorInterval = setInterval(function () {
       var editor = document.querySelector(
@@ -206,18 +155,70 @@
       if (editor && editor.offsetParent !== null) {
         clearInterval(editorInterval);
         editor.focus();
-        editor.innerHTML = draft.replace(/\n/g, "<br>");
+        editor.innerHTML = draftText.replace(/\n/g, "<br>");
         editor.dispatchEvent(new Event("input", { bubbles: true }));
-        log("Draft inserted into Freshdesk editor");
+        log("Draft auto-inserted into Freshdesk editor");
       }
       attempts++;
       if (attempts > 40) clearInterval(editorInterval);
     }, 250);
+  }
+
+  // -------------------------------------------------
+  // Route watcher
+  // -------------------------------------------------
+  function routeCheck() {
+    var currentPath = window.location.pathname;
+    var pathChanged = currentPath !== lastPath;
+    lastPath = currentPath;
+
+    if (!isTicketRoute()) {
+      if (pathChanged) {
+        lastSentTicketId = null;
+      }
+      return;
+    }
+
+    var ticketId = getTicketId();
+    if (!ticketId) return;
+    if (ticketId === lastSentTicketId) return;
+
+    var subject = extractSubject();
+    var description = extractDescription();
+    if (!subject && !description) return;
+
+    sendTicketData(ticketId, subject, description);
+    lastSentTicketId = ticketId;
+  }
+
+  // -------------------------------------------------
+  // Listen for messages from sidecar window
+  // -------------------------------------------------
+  window.addEventListener("message", function (event) {
+    if (event.origin !== SIDECAR_ORIGIN) return;
+    if (!event.data) return;
+
+    if (event.data.type === "DRAFT_READY") {
+      var currentId = getTicketId();
+      if (event.data.ticket_id && currentId && event.data.ticket_id !== currentId) {
+        log("Ignoring stale DRAFT_READY for ticket", event.data.ticket_id, "current:", currentId);
+        return;
+      }
+      log("Received DRAFT_READY, length:", (event.data.draft || "").length);
+      insertIntoEditor(event.data.draft || "");
+      return;
+    }
+
+    if (event.data.type === "INSERT_INTO_CRM") {
+      log("Received INSERT_INTO_CRM");
+      insertIntoEditor(event.data.draft || "");
+    }
   });
 
   // -------------------------------------------------
-  // 8. Start polling
+  // Start
   // -------------------------------------------------
-  setInterval(poll, POLL_INTERVAL);
-  log("v6.0 loaded — postMessage bridge active");
+  setInterval(routeCheck, ROUTE_CHECK_MS);
+  routeCheck();
+  log("v9.0 loaded — standalone window mode");
 })();

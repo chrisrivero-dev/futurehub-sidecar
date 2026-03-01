@@ -15,6 +15,10 @@ venv311/
 instance/
 ralph/instance/
 
+# Runtime data (audit logs, JSONL)
+data/audit/
+data/*.db
+
 # OS files
 .DS_Store
 
