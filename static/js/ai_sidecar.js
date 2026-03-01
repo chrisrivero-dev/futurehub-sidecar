@@ -5,11 +5,14 @@
 // State lock: ensure auto-run fires only once per ticket URL
 // -----------------------------------------------------------
 
+// Queue for TICKET_DATA messages that arrive before AISidecar is ready
+let _pendingTicketData = null;
+
 window.addEventListener('message', (event) => {
   if (!event.data || event.data.type !== 'TICKET_DATA') return;
 
   const ticket = event.data.ticket;
-  console.log('[sidecar] Received TICKET_DATA:', ticket);
+  console.log('[sidecar] Received TICKET_DATA:', JSON.stringify(event.data));
 
   const subject = document.getElementById('subject');
   const latest = document.getElementById('latest-message');
@@ -23,36 +26,46 @@ window.addEventListener('message', (event) => {
     customerName.value = ticket.customer_name;
   }
 
-  // Store ticket id and domain for review mode and draft payload
-  if (window.aiSidecar) {
-    const prevTicketId = window.aiSidecar._currentTicketId;
-    window.aiSidecar._currentTicketId = ticket.id || null;
-    window.aiSidecar._currentTicketData = ticket;
-
-    // Extract domain from event origin (e.g. "https://company.freshdesk.com")
-    try {
-      window.aiSidecar._freshdeskDomain = event.origin
-        ? new URL(event.origin).hostname
-        : null;
-    } catch (_e) {
-      window.aiSidecar._freshdeskDomain = null;
-    }
-
-    // Clear stale draft when ticket changes
-    if (ticket.id && ticket.id !== prevTicketId) {
-      window.aiSidecar._clearDraftState();
-    }
-
-    if (typeof window.aiSidecar._showReviewButton === 'function') {
-      window.aiSidecar._showReviewButton();
-    }
-
-    // Auto-run only if this ticket hasn't been processed yet
-    if (ticket.id && ticket.id !== window.aiSidecar._lastProcessedTicketId) {
-      window.aiSidecar.autoRunDraft();
-    }
+  if (!window.aiSidecar) {
+    // AISidecar not ready yet — queue for replay after init
+    console.log('[sidecar] AISidecar not ready, queuing TICKET_DATA for ticket:', ticket.id);
+    _pendingTicketData = { ticket, origin: event.origin };
+    return;
   }
+
+  _applyTicketData(window.aiSidecar, ticket, event.origin);
 }); // ✅ CLOSES window.addEventListener('message', ...)
+
+function _applyTicketData(sidecar, ticket, origin) {
+  const prevTicketId = sidecar._currentTicketId;
+  sidecar._currentTicketId = ticket.id || null;
+  sidecar._currentTicketData = ticket;
+
+  console.log('[sidecar] _currentTicketId set to:', sidecar._currentTicketId);
+
+  // Extract domain from event origin
+  try {
+    sidecar._freshdeskDomain = origin
+      ? new URL(origin).hostname
+      : null;
+  } catch (_e) {
+    sidecar._freshdeskDomain = null;
+  }
+
+  // Clear stale draft when ticket changes
+  if (ticket.id && ticket.id !== prevTicketId) {
+    sidecar._clearDraftState();
+  }
+
+  if (typeof sidecar._showReviewButton === 'function') {
+    sidecar._showReviewButton();
+  }
+
+  // Auto-run only if this ticket hasn't been processed yet
+  if (ticket.id && ticket.id !== sidecar._lastProcessedTicketId) {
+    sidecar.autoRunDraft();
+  }
+}
 
 // -----------------------------------------------------------
 // Helper text inserted by Suggested Actions
@@ -129,51 +142,16 @@ class AISidecar {
     this.loadCannedResponses();
     this.initReviewMode();
     this.loadAnalyticsSummary();
-    this._initTicketIdFromContext();
-  }
 
-  // -----------------------------
-  // Hydrate ticket ID from Freshdesk SDK or URL fallback
-  // -----------------------------
-  _initTicketIdFromContext() {
-    // If already set via postMessage, skip
-    if (this._currentTicketId) return;
-
-    // Try Freshdesk Marketplace SDK
-    if (typeof app !== 'undefined' && app.initialized) {
-      app.initialized().then((client) => {
-        return client.data.get('ticket');
-      }).then((ticketData) => {
-        const tid = ticketData?.ticket?.id;
-        if (tid && !this._currentTicketId) {
-          this._currentTicketId = tid;
-          this._freshdeskDomain = ticketData?.ticket?.domain || null;
-          console.log('[sidecar] Ticket ID from Freshdesk SDK:', tid);
-        }
-      }).catch(() => {
-        // SDK not available or failed — fall through to URL
-      });
+    // Replay any TICKET_DATA that arrived before constructor finished
+    if (_pendingTicketData) {
+      console.log('[sidecar] Replaying queued TICKET_DATA for ticket:', _pendingTicketData.ticket.id);
+      _applyTicketData(this, _pendingTicketData.ticket, _pendingTicketData.origin);
+      _pendingTicketData = null;
     }
-
-    // URL fallback: ?ticket_id=123 or referrer /a/tickets/123
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const fromParam = Number(params.get('ticket_id'));
-      if (Number.isFinite(fromParam) && fromParam > 0) {
-        this._currentTicketId = fromParam;
-        console.log('[sidecar] Ticket ID from URL param:', fromParam);
-        return;
-      }
-
-      const refMatch = (document.referrer || '').match(/\/a\/tickets\/(\d+)/);
-      if (refMatch) {
-        this._currentTicketId = parseInt(refMatch[1], 10);
-        console.log('[sidecar] Ticket ID from referrer:', this._currentTicketId);
-      }
-    } catch (_e) { /* ignore */ }
   }
   initReviewMode() {
-    this._currentTicketId = null;
+    // _currentTicketId is initialized in constructor — do NOT reset here
     this._inReviewMode = false;
 
     const header = document.querySelector('.header-controls');
@@ -639,6 +617,11 @@ class AISidecar {
   autoRunDraft() {
     if (this._isAutoRunning) return;
 
+    if (!this._currentTicketId) {
+      console.log('[sidecar] Auto-run blocked: _currentTicketId is null');
+      return;
+    }
+
     const subject = document.getElementById('subject');
     const latest = document.getElementById('latest-message');
 
@@ -647,7 +630,7 @@ class AISidecar {
       return;
     }
 
-    console.log('[sidecar] Auto-running draft pipeline');
+    console.log('[sidecar] Auto-running draft pipeline, _currentTicketId:', this._currentTicketId);
     this._isAutoRunning = true;
     this.generateDraft().finally(() => {
       this._isAutoRunning = false;
@@ -874,6 +857,8 @@ class AISidecar {
   // -----------------------------
   async generateDraft() {
     if (!this.form) return;
+
+    console.log('[sidecar] generateDraft called, _currentTicketId:', this._currentTicketId);
 
     // Snapshot the ticket ID at call time for stale-draft guard
     const draftForTicketId = this._currentTicketId;
