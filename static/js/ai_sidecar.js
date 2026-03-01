@@ -133,10 +133,9 @@ class AISidecar {
     this._isAutoRunning = false;
     this._freshdeskDomain = null;
 
-    // Draft bleed prevention
-    this._currentTicketData = null;
-    this._lastProcessedTicketId = null;
-    this._openerOrigin = null;
+    // Lifecycle state
+    this._currentTicketId = null;
+    this._inReviewMode = false;
 
     this.init();
     this.bindCollapseToggle();
@@ -144,16 +143,10 @@ class AISidecar {
     this.loadCannedResponses();
     this.initReviewMode();
     this.loadAnalyticsSummary();
-
-    // Replay any TICKET_DATA that arrived before constructor finished
-    if (_pendingTicketData) {
-      console.log('[sidecar] Replaying queued TICKET_DATA for ticket:', _pendingTicketData.ticket.id);
-      _applyTicketData(this, _pendingTicketData.ticket, _pendingTicketData.origin);
-      _pendingTicketData = null;
-    }
   }
+
   initReviewMode() {
-    // _currentTicketId is initialized in constructor — do NOT reset here
+    // DO NOT reset _currentTicketId here
     this._inReviewMode = false;
 
     const header = document.querySelector('.header-controls');
@@ -238,9 +231,14 @@ class AISidecar {
       container.innerHTML = 'Failed to load review data.';
     }
   }
+
   _renderReviewContent(data) {
     const container = document.getElementById('review-mode-container');
     if (!container) return;
+
+    // existing render logic continues...
+  }
+}
 
     const d = data.draft_summary || {};
     const l = data.lifecycle || {};
@@ -696,23 +694,12 @@ class AISidecar {
         /* never delay Send */
       }
     }
+  // Mailbox transport — no postMessage
+  window.__SIDECAR_DRAFT__ = text;
+  window.__SIDECAR_DRAFT_TS__ = Date.now();
+  window.__SIDECAR_STRATEGY__ = this._currentStrategy;
 
-    // Post message to opener (Freshdesk via TamperMonkey)
-    const target = window.opener || window.parent;
-    const targetOrigin = this._openerOrigin || '*';
-    if (target && target !== window && !target.closed) {
-      target.postMessage(
-        {
-          type: 'INSERT_INTO_CRM',
-          draft: text,
-          strategy: this._currentStrategy,
-        },
-        targetOrigin
-      );
-    }
-
-    this.showToast('Draft inserted into CRM');
-  }
+  this.showToast('Draft ready for injection');
 
   // -----------------------------
   // Auto-Send Card Methods
